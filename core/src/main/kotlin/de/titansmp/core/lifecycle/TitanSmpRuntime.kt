@@ -19,6 +19,7 @@ import de.titansmp.core.player.JdbcPlayerRepository
 import de.titansmp.core.server.ConfiguredNetworkServer
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import javax.sql.DataSource
 
 enum class RuntimeState {
     STOPPED,
@@ -55,6 +56,12 @@ class TitanSmpRuntime(
     fun eventBus(): EventBus {
         check(state == RuntimeState.READY) { "TitanSMP runtime must be ready before using the event bus" }
         return requireNotNull(eventBusService)
+    }
+
+    /** Shared database pool for feature-module repositories created at the application boundary. */
+    fun databaseDataSource(): DataSource {
+        check(state == RuntimeState.READY) { "TitanSMP runtime must be ready before using database services" }
+        return requireNotNull(databaseService).dataSource
     }
 
     @Synchronized

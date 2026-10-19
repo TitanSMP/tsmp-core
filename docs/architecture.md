@@ -49,6 +49,7 @@ Each feature module encapsulates its own domain and uses shared infrastructure t
 
 - **`modules/data-bridge`** is reserved for a future strongly adapted TitanSMP module based on `mc-data-bridge`. This structure does not include an upstream fork or copied code.
   A source audit and integration proposal are documented in [data-bridge-audit.md](data-bridge-audit.md). It recommends using the existing database service and Redis Event Bus, and keeping Paper serialization/lifecycle code in a platform adapter. The audit does not add projects, runtime behavior, dependencies, tables, or events.
+- **`modules/ender-chest`** owns the platform-independent TitanSMP EnderChest storage service and JDBC repository. Its public DTO/service contract lives in root `api`; Paper GUI, command, item serialization, and vanilla EnderChest interception live in `paper`. Both entry points use the same UUID-keyed MariaDB row and revision-checked saves. LuckPerms supplies permission checks; it does not define storage identity or persisted rank state.
 - **`modules/moderation`** owns moderation-related functionality.
 - **`modules/chat`** owns chat functionality.
 - **`modules/economy`** owns economy functionality.
@@ -70,7 +71,8 @@ Allowed Gradle project dependencies are:
 
 ```text
 core      -> api
-paper     -> api, core
+modules/ender-chest -> api, core
+paper     -> api, core, modules/ender-chest
 velocity  -> api, core
 modules/* -> api, core
 services/web-api -> (no project dependency declared yet)

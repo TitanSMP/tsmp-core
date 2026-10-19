@@ -21,6 +21,7 @@ include("api", "core", "paper", "velocity")
 
 include(
     "modules:data-bridge",
+    "modules:ender-chest",
     "modules:moderation",
     "modules:chat",
     "modules:economy",

@@ -3,6 +3,19 @@ version: '${project.version}'
 main: de.titansmp.paper.TitanSmpPaperPlugin
 api-version: '26.3'
 description: TitanSMP network platform integration
+depend:
+  - LuckPerms
+commands:
+  ec:
+    description: Open your TitanSMP EnderChest
+    usage: /ec
+permissions:
+  titansmp.enderchest.rows.1:
+    description: Grants access to one row of TitanSMP EnderChest storage
+    default: true
+  titansmp.enderchest.rows.2:
+    description: Grants access to two rows of TitanSMP EnderChest storage
+    default: false
 libraries:
   - org.jetbrains.kotlin:kotlin-stdlib:2.4.21
   - com.zaxxer:HikariCP:7.1.0
