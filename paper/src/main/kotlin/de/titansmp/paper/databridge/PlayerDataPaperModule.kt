@@ -12,6 +12,7 @@ import de.titansmp.api.event.EventEnvelope
 import de.titansmp.api.event.EventListener
 import de.titansmp.api.event.EventSubscription
 import de.titansmp.api.databridge.SerializedPlayerItem
+import de.titansmp.api.databridge.PotionEffectData
 import de.titansmp.api.event.EventBus
 import de.titansmp.api.event.EventMetadata
 import de.titansmp.paper.serialization.PaperItemStackCodec
@@ -25,6 +26,8 @@ import org.bukkit.event.entity.EntityRegainHealthEvent
 import org.bukkit.event.player.PlayerExpChangeEvent
 import org.bukkit.event.player.PlayerItemConsumeEvent
 import org.bukkit.event.entity.FoodLevelChangeEvent
+import org.bukkit.event.entity.EntityPotionEffectEvent
+import org.bukkit.event.entity.PlayerDeathEvent
 import org.bukkit.event.inventory.InventoryClickEvent
 import org.bukkit.event.inventory.InventoryDragEvent
 import org.bukkit.event.player.PlayerDropItemEvent
@@ -34,6 +37,9 @@ import org.bukkit.event.player.PlayerMoveEvent
 import org.bukkit.event.player.PlayerAttemptPickupItemEvent
 import org.bukkit.event.player.PlayerSwapHandItemsEvent
 import org.bukkit.inventory.ItemStack
+import org.bukkit.NamespacedKey
+import org.bukkit.Registry
+import org.bukkit.potion.PotionEffect
 import org.bukkit.plugin.java.JavaPlugin
 import java.util.UUID
 import java.time.Instant
@@ -57,6 +63,7 @@ class PlayerDataPaperModule(
     private val loading = ConcurrentHashMap.newKeySet<UUID>()
     private val states = ConcurrentHashMap<UUID, PlayerState>()
     private val saves = ConcurrentHashMap.newKeySet<CompletableFuture<*>>()
+    private val dirtyPotionEffects = ConcurrentHashMap.newKeySet<UUID>()
     private val incoming = ConcurrentHashMap<UUID, PlayerTransferPrepare>()
     private val ready = ConcurrentHashMap<UUID, PlayerTransferReady>()
     private val subscriptions = mutableListOf<EventSubscription>()
@@ -174,7 +181,7 @@ class PlayerDataPaperModule(
             publishTransferFailure(event, "state-capture-failed")
             return@onMain
         }
-        val save = if (sameState(baseline, next) && baseline.revision > 0) CompletableFuture.completedFuture(baseline)
+        val save = if (sameState(baseline, next) && baseline.revision > 0 && event.playerUuid !in dirtyPotionEffects) CompletableFuture.completedFuture(baseline)
             else service.save(next, serverId).toCompletableFuture()
         track(save)
         save.whenComplete { saved, failure -> onMain {
@@ -187,6 +194,7 @@ class PlayerDataPaperModule(
             } else {
                 if (sourceTransfers[event.playerUuid] != event.transferId) return@onMain
                 states[event.playerUuid] = saved
+                dirtyPotionEffects -= event.playerUuid
                 eventBus.publish(PlayerTransferReady(
                     EventMetadata(eventType = PlayerTransferReady.TYPE, sourceServerId = serverId), event.transferId,
                     event.playerUuid, event.sourceServerId, event.targetServerId, saved.revision, Instant.now(),
@@ -245,8 +253,9 @@ class PlayerDataPaperModule(
                     return@onMain
                 }
                 if (loaded != null) apply(player, loaded) else resetToVanillaDefaults(player)
-                val baseline = loaded ?: snapshot(player, revision = 0)
+                val baseline = snapshot(player, revision = loaded?.revision ?: 0)
                 states[player.uniqueId] = baseline
+                dirtyPotionEffects -= player.uniqueId
                 transferReady?.let { readyEvent ->
                     eventBus.publish(PlayerTransferCompleted(EventMetadata(eventType = PlayerTransferCompleted.TYPE, sourceServerId = serverId),
                         readyEvent.transferId, player.uniqueId, readyEvent.sourceServerId, serverId, baseline.revision, Instant.now()))
@@ -273,6 +282,7 @@ class PlayerDataPaperModule(
         incoming.remove(player.uniqueId)
         ready.remove(player.uniqueId)
         sourceTransfers.remove(player.uniqueId)
+        dirtyPotionEffects.remove(player.uniqueId)
         val baseline = states.remove(player.uniqueId) ?: return CompletableFuture.completedFuture(Unit)
         return saveIfDirty(player, baseline)
     }
@@ -302,6 +312,17 @@ class PlayerDataPaperModule(
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     fun freezeItemConsume(event: PlayerItemConsumeEvent) { if (event.player.uniqueId in loading) event.isCancelled = true }
 
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    fun trackPotionEffectChange(event: EntityPotionEffectEvent) {
+        val player = event.entity as? Player ?: return
+        if (player.uniqueId !in loading) dirtyPotionEffects += player.uniqueId
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    fun trackPotionEffectsAfterDeath(event: PlayerDeathEvent) {
+        dirtyPotionEffects += event.entity.uniqueId
+    }
+
     /** Snapshot all online players synchronously on disable, then persist and drain the DB worker. */
     fun flushAndClose(): CompletionStage<Unit> {
         accepting = false
@@ -321,8 +342,9 @@ class PlayerDataPaperModule(
             logger.severe("Could not capture TitanSMP player state for ${player.uniqueId}: ${failure.message}")
             return CompletableFuture.failedFuture(failure)
         }
-        if (sameState(baseline, next) && baseline.revision > 0) return CompletableFuture.completedFuture(Unit)
+        if (sameState(baseline, next) && baseline.revision > 0 && player.uniqueId !in dirtyPotionEffects) return CompletableFuture.completedFuture(Unit)
         val saving = service.save(next, serverId).thenApply { saved ->
+            dirtyPotionEffects -= player.uniqueId
             eventBus.publish(PlayerStateUpdated(EventMetadata(eventType = PlayerStateUpdated.TYPE, sourceServerId = serverId), player.uniqueId, saved.revision))
                 .whenComplete { _, failure -> if (failure != null) logger.severe("Could not publish player-state update for ${player.uniqueId}: ${failure.message}") }
             Unit
@@ -354,10 +376,26 @@ class PlayerDataPaperModule(
             player.level.coerceAtLeast(0),
             player.totalExperience.coerceAtLeast(0),
             revision,
+            player.activePotionEffects.map(::encodeEffect).sortedBy { it.type },
+            Instant.ofEpochMilli(System.currentTimeMillis()),
         )
     }
 
     private fun apply(player: Player, state: PlayerState) {
+        // A successfully loaded state is authoritative. Clear target-local/plugin effects only now.
+        player.activePotionEffects.forEach { player.removePotionEffect(it.type) }
+        val now = Instant.now()
+        state.potionEffects.forEach { data ->
+            val key = NamespacedKey.fromString(data.type) ?: run {
+                logger.warning("Ignoring invalid potion effect identifier '${data.type}' for ${player.uniqueId}")
+                return@forEach
+            }
+            val type = Registry.EFFECT.get(key) ?: run {
+                logger.warning("Potion effect '${data.type}' is unavailable on this Paper version for ${player.uniqueId}")
+                return@forEach
+            }
+            player.addPotionEffect(data.toPaperEffect(state.capturedAt, now) ?: return@forEach)
+        }
         player.inventory.storageContents = state.inventory.map(::decode).toTypedArray()
         player.inventory.armorContents = arrayOf(decode(state.armor[3]), decode(state.armor[2]), decode(state.armor[1]), decode(state.armor[0]))
         player.inventory.setItemInOffHand(decode(state.offhand))
@@ -370,6 +408,7 @@ class PlayerDataPaperModule(
     }
 
     private fun resetToVanillaDefaults(player: Player) {
+        player.activePotionEffects.forEach { player.removePotionEffect(it.type) }
         player.inventory.storageContents = arrayOfNulls(PlayerState.INVENTORY_SLOTS)
         player.inventory.armorContents = arrayOfNulls(PlayerState.ARMOR_SLOTS)
         player.inventory.setItemInOffHand(null)
@@ -386,7 +425,29 @@ class PlayerDataPaperModule(
 
     private fun decode(item: SerializedPlayerItem?): ItemStack? = PaperItemStackCodec.decode(item?.payload)
 
-    private fun sameState(left: PlayerState, right: PlayerState): Boolean = left.copy(revision = 0) == right.copy(revision = 0)
+    private fun encodeEffect(effect: PotionEffect): PotionEffectData = PotionEffectData(
+        effect.type.key.toString(),
+        if (effect.isInfinite) 0 else effect.duration,
+        effect.amplifier,
+        effect.isAmbient,
+        effect.hasParticles(),
+        effect.hasIcon(),
+        effect.isInfinite,
+        effect.hiddenPotionEffect?.let(::encodeEffect),
+    )
+
+    private fun PotionEffectData.toPaperEffect(capturedAt: Instant, now: Instant): PotionEffect? {
+        val remaining = remainingTicksAt(capturedAt, now) ?: return null
+        val key = NamespacedKey.fromString(type) ?: return null
+        val effectType = Registry.EFFECT.get(key) ?: return null
+        val hidden = hiddenEffect?.toPaperEffect(capturedAt, now)
+        return PotionEffect(effectType, remaining,
+            amplifier, ambient, particles, icon, hidden)
+    }
+
+
+    private fun sameState(left: PlayerState, right: PlayerState): Boolean =
+        left.copy(revision = 0, capturedAt = Instant.EPOCH) == right.copy(revision = 0, capturedAt = Instant.EPOCH)
 
     private fun onMain(action: () -> Unit) {
         if (Bukkit.isPrimaryThread()) action()

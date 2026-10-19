@@ -4,6 +4,8 @@ import de.titansmp.api.databridge.PlayerState
 import de.titansmp.api.databridge.PlayerStateConflictException
 import de.titansmp.api.databridge.PlayerStateOwnershipException
 import de.titansmp.api.databridge.SerializedPlayerItem
+import de.titansmp.api.databridge.PotionEffectData
+import java.time.Instant
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -62,5 +64,11 @@ class JdbcPlayerStateRepositoryIntegrationTest {
         playerUuid, List(36) { if (it == 8) SerializedPlayerItem(byteArrayOf(1, 2, 3)) else null },
         listOf(SerializedPlayerItem(byteArrayOf(4)), null, null, SerializedPlayerItem(byteArrayOf(5))),
         SerializedPlayerItem(byteArrayOf(6)), 15.25, 14, .75f, 42, 1889,
+        potionEffects = listOf(
+            PotionEffectData("minecraft:speed", 1200, 1, false, true, true),
+            PotionEffectData("minecraft:strength", 600, 2, true, false, false),
+            PotionEffectData("minecraft:regeneration", 80, 0, false, true, true),
+        ),
+        capturedAt = Instant.parse("2026-10-19T12:00:00Z"),
     )
 }

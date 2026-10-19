@@ -1,6 +1,8 @@
 package de.titansmp.api.databridge
 
 import java.util.UUID
+import java.time.Instant
+import java.time.Duration
 import de.titansmp.api.event.EventMetadata
 import de.titansmp.api.event.EventType
 import de.titansmp.api.event.NetworkEvent
@@ -27,6 +29,9 @@ data class PlayerState(
     val level: Int,
     val totalExperience: Int,
     val revision: Long = 0,
+    val potionEffects: List<PotionEffectData> = emptyList(),
+    /** Wall-clock instant at which finite effect durations were captured. */
+    val capturedAt: Instant = Instant.ofEpochMilli(System.currentTimeMillis()),
 ) {
     init {
         require(inventory.size == INVENTORY_SLOTS) { "Main inventory must contain $INVENTORY_SLOTS slots" }
@@ -36,6 +41,7 @@ data class PlayerState(
         require(experience.isFinite() && experience in 0.0f..1.0f) { "Experience progress must be between 0 and 1" }
         require(level >= 0 && totalExperience >= 0) { "Experience values cannot be negative" }
         require(revision >= 0) { "Revision cannot be negative" }
+        require(potionEffects.map { it.type }.distinct().size == potionEffects.size) { "Potion effect types must be unique" }
     }
 
     fun withRevision(value: Long): PlayerState = copy(revision = value)
@@ -43,6 +49,35 @@ data class PlayerState(
     companion object {
         const val INVENTORY_SLOTS = 36
         const val ARMOR_SLOTS = 4
+    }
+}
+
+/** Platform-neutral effect snapshot. Durations are ticks; infinite effects retain their special semantics. */
+data class PotionEffectData(
+    val type: String,
+    val durationTicks: Int,
+    val amplifier: Int,
+    val ambient: Boolean,
+    val particles: Boolean,
+    val icon: Boolean,
+    val infinite: Boolean = false,
+    val hiddenEffect: PotionEffectData? = null,
+) {
+    init {
+        require(type.matches(Regex("[a-z0-9._-]+:[a-z0-9/._-]+"))) { "Potion effect type must be a namespaced identifier" }
+        require(if (infinite) durationTicks == 0 else durationTicks >= 0) { "Invalid potion effect duration" }
+        require(amplifier >= 0) { "Potion effect amplifier cannot be negative" }
+    }
+
+    /** Returns Paper's special infinite sentinel, remaining finite ticks, or null after expiration. */
+    fun remainingTicksAt(capturedAt: Instant, now: Instant): Int? {
+        if (infinite) return -1
+        if (!now.isAfter(capturedAt)) return durationTicks.takeIf { it > 0 }
+        val remainingWindowMillis = durationTicks.toLong() * 50L
+        val elapsedMillis = try { Duration.between(capturedAt, now).toMillis() } catch (_: ArithmeticException) { Long.MAX_VALUE }
+        if (elapsedMillis >= remainingWindowMillis) return null
+        val elapsedTicks = (elapsedMillis + 49L) / 50L
+        return (durationTicks - elapsedTicks.toInt()).takeIf { it > 0 }
     }
 }
 

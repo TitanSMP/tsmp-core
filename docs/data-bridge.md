@@ -2,13 +2,13 @@
 
 ## Scope
 
-Phase 1 synchronizes only Player State + Inventory/Armor/Offhand + Health/Food/Experience. The selected state is a UUID-keyed player snapshot. The EnderChest remains wholly owned by `modules/ender-chest` and is not represented in the player-state API or table.
+Phases 1 and 1.5 provide UUID-keyed player snapshots and coordinated server transfer. Phase 2 adds active Potion Effects to that same snapshot. The EnderChest remains wholly owned by `modules/ender-chest` and is not represented in the player-state API or table.
 
 The implementation is native TitanSMP code based on the source audit in [data-bridge-audit.md](data-bridge-audit.md). It does not use the archive as a runtime dependency and does not copy code from it.
 
 ## Module boundaries
 
-- `api` contains `PlayerState`, opaque `SerializedPlayerItem`, `PlayerDataService`, persistence exceptions, and the `PlayerStateUpdated` event. It has no Paper, Bukkit, Velocity, JDBC, MariaDB, Lettuce, or Redis types.
+- `api` contains `PlayerState`, `PotionEffectData`, opaque `SerializedPlayerItem`, `PlayerDataService`, persistence exceptions, and the `PlayerStateUpdated` event. It has no Paper, Bukkit, Velocity, JDBC, MariaDB, Lettuce, or Redis types.
 - `modules/data-bridge` contains the asynchronous service facade, JDBC repository, binary payload codec, and a small monotonic revision tracker. It receives the existing shared database pool from `core` and creates no pool or Redis client.
 - `core` owns the Flyway migration and existing database/event infrastructure.
 - `paper` snapshots/applies live player values on the Paper thread and owns join gating, quit/shutdown lifecycle, and Paper ItemStack serialization.
@@ -28,6 +28,8 @@ The Data Bridge implementation lives in one Gradle feature project, with Paper i
 - food level (validated 0–20)
 - XP-bar progress (validated 0–1), level, and total experience
 - optimistic persistence revision
+- active potion effects with stable namespaced type IDs, duration in ticks, amplifier, ambient/particle/icon flags, infinite-duration marker, and Paper's hidden lower-priority effect chain
+- capture instant used to account for elapsed time before applying finite effects
 
 Empty slots are null. Cursor items, temporary containers, open GUIs, EnderChest, saturation, max-health attributes, and all Phase 2 fields are excluded. If MariaDB has no state row, the local inventory and vitals are cleared to vanilla defaults (empty inventory, full food and default max health, level/XP zero); old server-local player files are not imported. The default snapshot is written on first quit/shutdown.
 
@@ -41,7 +43,7 @@ The ZIP archive is not modified, unpacked, included, or used as a dependency. Th
 
 Flyway `V3__create_player_state.sql` creates one `player_state` row per UUID with `state_payload LONGBLOB`, `revision`, and `updated_at`. The row references `players.uuid`; it has no server-specific key and contains no EnderChest, economy, or statistics data. Storing the selected snapshot in one binary payload means all Phase 1 fields are replaced together.
 
-The payload has a magic/version header, explicit slot counts, length-prefixed Paper item bytes, scalar values, a 64 MiB upper bound, and strict validation on decode. Database calls run on a dedicated worker executor; Paper object capture/application stays on the Paper main thread.
+The payload has a magic/version header, explicit slot counts, length-prefixed Paper item bytes, scalar values, effect records, a 64 MiB upper bound, and strict validation on decode. Version 2 adds the capture instant and potion effect list. Version 1 payloads remain readable; missing effects decode to an empty list and require no SQL migration. Database calls run on a dedicated worker executor; Paper object capture/application stays on the Paper main thread.
 
 For a first save, a conditional `INSERT ... SELECT` requires the online UUID to belong to the current server. Later saves use one `UPDATE` with `WHERE revision = expectedRevision` and the same server ownership condition. MariaDB's single-row update is atomic. A duplicate initial insert or mismatched revision is rejected; no merge is attempted. No distributed lock is used.
 
@@ -80,6 +82,18 @@ The in-memory protocol prevents duplicate/replayed event IDs within a process li
 
 Other known limitations: no periodic checkpoints; no state migration from vanilla player files; Paper serialization compatibility follows the Paper/Minecraft version that reads the bytes; event delivery is best-effort; failed quit persistence deliberately leaves online presence until recovery/manual reconciliation; concurrent or stale snapshots are rejected rather than merged.
 
-## Explicitly excluded from Phase 1
+## Potion Effects (Phase 2)
 
-Potion Effects, Advancements, Statistics, Maps, PDC player state, Location, Gamemode, Flight, Companions, separate Gamemode Inventories, EnderChest, Economy, Moderation, Chat, Friends, Clans, Discord, and Web API behavior are not synchronized here. ItemStack PDC remains included as part of the native item bytes; this does not add general player PDC synchronization.
+Paper 26.3 exposes an effect's registry key, duration in ticks, amplifier, ambient state, particle and icon visibility, infinite-duration semantics (`PotionEffect.isInfinite()` / `INFINITE_DURATION`), and an optional hidden effect. TitanSMP stores the type as a namespaced identifier such as `minecraft:speed`, never a display name. The hidden effect is kept recursively because it may become visible after a stronger effect expires. The API DTO contains no Bukkit or Paper types.
+
+Each snapshot carries `capturedAt`. Finite durations are reduced by the elapsed wall-clock time at apply, rounded up to ticks so transfer delay does not extend an effect; effects at zero are omitted. Infinite effects use Paper's special infinite sentinel and do not undergo arithmetic. The arithmetic is bounded to avoid overflow. Unknown effect keys on a target are skipped with a warning; the committed payload remains intact for a later compatible server.
+
+After a successful load, the target removes its current potion effects and then applies the snapshot. This also applies to a valid first-time load with no row, which resets to vanilla defaults with no effects. No effects are cleared if load fails or a stale transfer revision is rejected. Effect add/change/remove events mark the player's effect state dirty; no DB operation runs per tick. The existing quit, transfer, and shutdown snapshots observe the complete active effect set, so milk, plugin removals, refreshes, natural expiry, and newly applied effects are represented by the next lifecycle save.
+
+Death is treated as a dirty-state transition. The normal lifecycle snapshot reads the actual post-death/respawn Paper state; effects removed by Minecraft are therefore not brought back from an old state. No standalone death save or effect table is created. The target and source use the same CAS revisions as all other state, so stale snapshots cannot overwrite a newer effect list.
+
+This phase synchronizes the state visible to Paper when a lifecycle snapshot occurs. It does not define external plugin effect ownership or per-effect exemptions. Effects from other plugins are included in the complete snapshot, with no per-tick persistence or general external-effect API.
+
+## Explicitly excluded from current phases
+
+Advancements, Statistics, Maps, PDC player state, Location, Gamemode, Flight, Companions, separate Gamemode Inventories, EnderChest, Economy, Moderation, Chat, Friends, Clans, Discord, and Web API behavior are not synchronized here. ItemStack PDC remains included as part of the native item bytes; this does not add general player PDC synchronization.

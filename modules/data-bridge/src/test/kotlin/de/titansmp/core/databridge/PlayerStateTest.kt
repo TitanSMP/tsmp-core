@@ -7,8 +7,17 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.util.UUID
+import java.time.Instant
 
 class PlayerStateTest {
+    @Test fun `effect duration decays across transfer and expires without negative duration`() {
+        val captured = Instant.parse("2026-10-19T12:00:00Z")
+        val finite = SerializedPotion("minecraft:speed", 100)
+        assertEquals(80, finite.remainingTicksAt(captured, captured.plusMillis(1_000)))
+        assertEquals(null, finite.remainingTicksAt(captured, captured.plusMillis(6_000)))
+        assertEquals(-1, SerializedPotion("minecraft:speed", 0, infinite = true).remainingTicksAt(captured, captured.plusSeconds(3_600)))
+    }
+
     @Test fun `state covers inventory armor offhand health food and complete experience`() {
         val state = PlayerState(
             UUID.randomUUID(), List(36) { if (it == 0) SerializedPlayerItem(byteArrayOf(1, 2)) else null },
@@ -44,3 +53,6 @@ class PlayerStateTest {
         assertFalse(tracker.observe(uuid, 19))
     }
 }
+
+private fun SerializedPotion(type: String, duration: Int, infinite: Boolean = false) =
+    de.titansmp.api.databridge.PotionEffectData(type, duration, 0, false, true, true, infinite)

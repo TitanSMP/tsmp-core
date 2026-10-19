@@ -9,6 +9,7 @@ import de.titansmp.api.databridge.PlayerTransferCompleted
 import de.titansmp.api.databridge.PlayerTransferTargetPrepared
 import de.titansmp.api.databridge.PlayerTransferFailed
 import de.titansmp.api.databridge.SerializedPlayerItem
+import de.titansmp.api.databridge.PotionEffectData
 import de.titansmp.api.event.EventBus
 import de.titansmp.api.event.EventEnvelope
 import de.titansmp.api.event.EventMetadata
@@ -21,10 +22,15 @@ import net.kyori.adventure.text.Component
 import org.bukkit.Bukkit
 import org.bukkit.Material
 import org.bukkit.NamespacedKey
+import org.bukkit.Registry
 import org.bukkit.enchantments.Enchantment
 import org.bukkit.inventory.ItemFlag
 import org.bukkit.inventory.ItemStack
 import org.bukkit.persistence.PersistentDataType
+import org.bukkit.potion.PotionEffect
+import org.bukkit.damage.DamageSource
+import org.bukkit.damage.DamageType
+import org.bukkit.event.entity.PlayerDeathEvent
 import org.bukkit.plugin.java.JavaPlugin
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -84,6 +90,64 @@ class PlayerDataPaperModuleTest {
         assertEquals(Material.IRON_BOOTS, player.inventory.boots?.type)
         assertEquals(Material.SHIELD, player.inventory.itemInOffHand.type)
         assertEquals(1, service.loads)
+    }
+
+    @Test fun `join replaces target effects and expires effects using captured transfer time`() {
+        val player = server.addPlayer()
+        val speed = Registry.EFFECT.get(NamespacedKey.minecraft("speed"))!!
+        val strength = Registry.EFFECT.get(NamespacedKey.minecraft("strength"))!!
+        player.addPotionEffect(PotionEffect(speed, 5_000, 0))
+        val state = state(player.uniqueId).copy(
+            potionEffects = listOf(
+                PotionEffectData("minecraft:speed", 620, 1, true, false, true),
+                PotionEffectData("minecraft:strength", 80, 0, false, true, false),
+                PotionEffectData("minecraft:regeneration", 100, 0, false, true, true),
+            ),
+            capturedAt = Instant.now().minusSeconds(6),
+        )
+        service.loaded = CompletableFuture.completedFuture(state)
+        module.loadOnJoin(player)
+        server.scheduler.performOneTick()
+
+        assertEquals(1, player.activePotionEffects.size)
+        assertTrue(player.hasPotionEffect(speed))
+        assertEquals(1, player.getPotionEffect(speed)?.amplifier)
+        assertTrue(player.getPotionEffect(speed)!!.duration in 450..620)
+        assertTrue(player.getPotionEffect(speed)!!.isAmbient)
+        assertTrue(!player.getPotionEffect(speed)!!.hasParticles())
+        assertTrue(player.getPotionEffect(speed)!!.hasIcon())
+        assertTrue(player.hasPotionEffect(strength).not())
+        assertTrue(player.activePotionEffects.none { it.type.key == NamespacedKey.minecraft("regeneration") })
+    }
+
+    @Test fun `removed potion effect is absent from the next lifecycle save`() {
+        val player = server.addPlayer()
+        val state = state(player.uniqueId).copy(potionEffects = listOf(PotionEffectData("minecraft:speed", 1_200, 0, false, true, true)))
+        service.loaded = CompletableFuture.completedFuture(state)
+        module.loadOnJoin(player)
+        server.scheduler.performOneTick()
+
+        player.removePotionEffect(Registry.EFFECT.get(NamespacedKey.minecraft("speed"))!!)
+        module.saveOnQuit(player).toCompletableFuture().join()
+
+        assertTrue(service.saves.single().potionEffects.isEmpty())
+    }
+
+    @Test fun `effect removed on death remains absent after respawn lifecycle save`() {
+        val player = server.addPlayer()
+        service.loaded = CompletableFuture.completedFuture(
+            state(player.uniqueId).copy(potionEffects = listOf(PotionEffectData("minecraft:speed", 1_200, 0, false, true, true))),
+        )
+        module.loadOnJoin(player)
+        server.scheduler.performOneTick()
+        player.removePotionEffect(Registry.EFFECT.get(NamespacedKey.minecraft("speed"))!!)
+        module.trackPotionEffectsAfterDeath(
+            PlayerDeathEvent(player, DamageSource.builder(DamageType.GENERIC).build(), mutableListOf(), 0, "died"),
+        )
+        // The post-respawn lifecycle save snapshots the current Paper state, not the old loaded effect list.
+        module.saveOnQuit(player).toCompletableFuture().join()
+
+        assertTrue(service.saves.single().potionEffects.isEmpty())
     }
 
     @Test fun `quit saves changed snapshot and publishes committed revision`() {
