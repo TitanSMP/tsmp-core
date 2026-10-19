@@ -48,6 +48,7 @@ Platform wiring belongs in these modules. Paper forwards join and quit events as
 Each feature module encapsulates its own domain and uses shared infrastructure through `core`. Contracts required by other modules belong in `api`. Feature modules must not create parallel database or Redis systems.
 
 - **`modules/data-bridge`** is reserved for a future strongly adapted TitanSMP module based on `mc-data-bridge`. This structure does not include an upstream fork or copied code.
+  A source audit and integration proposal are documented in [data-bridge-audit.md](data-bridge-audit.md). It recommends using the existing database service and Redis Event Bus, and keeping Paper serialization/lifecycle code in a platform adapter. The audit does not add projects, runtime behavior, dependencies, tables, or events.
 - **`modules/moderation`** owns moderation-related functionality.
 - **`modules/chat`** owns chat functionality.
 - **`modules/economy`** owns economy functionality.
