@@ -1,19 +1,25 @@
 package de.titansmp.paper
 
+import de.titansmp.api.event.EventBus
+import de.titansmp.api.event.EventMetadata
+import de.titansmp.api.event.EventType
 import de.titansmp.api.player.PlayerService
+import de.titansmp.api.player.event.PlayerConnected
+import de.titansmp.api.player.event.PlayerDisconnected
+import de.titansmp.api.player.event.PlayerServerChanged
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import java.util.UUID
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.logging.Logger
 
 /** Performs blocking persistence away from Paper's server thread and keeps only event data. */
 class PaperPlayerIdentityListener(
-    private val playerService: PlayerService,
-    private val serverId: String,
+    private val runtime: CompletableFuture<PaperPlayerIdentityRuntime>,
     private val logger: Logger,
     private val persistence: ExecutorService = Executors.newSingleThreadExecutor { task ->
         Thread(task, "titansmp-player-identity").apply { isDaemon = true }
@@ -25,8 +31,28 @@ class PaperPlayerIdentityListener(
         val username = event.player.name
         persistence.execute {
             runCatching {
-                playerService.createOrLoad(uuid, username)
+                val dependencies = runtime.get()
+                val playerService = dependencies.playerService
+                val serverId = dependencies.serverId
+                val previous = playerService.createOrLoad(uuid, username)
+                val previousServer = previous.currentServer
                 playerService.setOnline(uuid, serverId)
+                val event = if (previous.online && previousServer != null && previousServer != serverId) {
+                    PlayerServerChanged(
+                        EventMetadata(eventType = PlayerServerChanged.TYPE, sourceServerId = serverId),
+                        uuid,
+                        previousServer,
+                        serverId,
+                    )
+                } else {
+                    PlayerConnected(
+                        EventMetadata(eventType = PlayerConnected.TYPE, sourceServerId = serverId),
+                        uuid,
+                        username,
+                        serverId,
+                    )
+                }
+                publish(dependencies.eventBus, event.metadata.eventType, event)
             }.onFailure { logger.severe("Could not update player identity for $uuid: ${it.message}") }
         }
     }
@@ -35,18 +61,53 @@ class PaperPlayerIdentityListener(
     fun onQuit(event: PlayerQuitEvent) {
         val uuid: UUID = event.player.uniqueId
         persistence.execute {
-            runCatching { playerService.setOffline(uuid, serverId) }
+            runCatching {
+                val dependencies = runtime.get()
+                val playerService = dependencies.playerService
+                val serverId = dependencies.serverId
+                if (playerService.setOffline(uuid, serverId)) {
+                    publish(dependencies.eventBus,
+                        PlayerDisconnected.TYPE,
+                        PlayerDisconnected(EventMetadata(eventType = PlayerDisconnected.TYPE, sourceServerId = serverId), uuid, serverId),
+                    )
+                }
+            }
                 .onFailure { logger.severe("Could not update player identity for $uuid: ${it.message}") }
         }
     }
 
+    private fun publish(eventBus: EventBus, eventType: EventType, event: de.titansmp.api.event.NetworkEvent) {
+        eventBus.publish(event).whenComplete { _, failure ->
+            if (failure != null) logger.severe("Could not publish player presence event ${eventType.value}: ${failure.message}")
+        }
+    }
+
     override fun close() {
-        persistence.shutdown()
+        stopAccepting()
+        awaitTermination()
+    }
+
+    fun stopAccepting() = persistence.shutdown()
+
+    fun awaitTermination() {
+        var interrupted = false
         try {
-            if (!persistence.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS)) persistence.shutdownNow()
-        } catch (_: InterruptedException) {
-            persistence.shutdownNow()
-            Thread.currentThread().interrupt()
+            while (!persistence.isTerminated) {
+                try {
+                    if (!persistence.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS)) persistence.shutdownNow()
+                } catch (_: InterruptedException) {
+                    interrupted = true
+                    persistence.shutdownNow()
+                }
+            }
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt()
         }
     }
 }
+
+data class PaperPlayerIdentityRuntime(
+    val playerService: PlayerService,
+    val eventBus: EventBus,
+    val serverId: String,
+)

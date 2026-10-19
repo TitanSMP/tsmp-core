@@ -1,7 +1,8 @@
 package de.titansmp.core.lifecycle
 
-import de.titansmp.api.server.NetworkServer
 import de.titansmp.api.player.PlayerService
+import de.titansmp.api.event.EventBus
+import de.titansmp.api.server.NetworkServer
 import de.titansmp.core.config.DatabaseConfig
 import de.titansmp.core.config.RedisConfig
 import de.titansmp.core.config.TitanSmpConfig
@@ -9,6 +10,8 @@ import de.titansmp.core.config.TitanSmpConfigLoader
 import de.titansmp.core.database.DatabaseMigrator
 import de.titansmp.core.database.DatabaseService
 import de.titansmp.core.database.HikariDatabaseService
+import de.titansmp.core.event.LettuceRedisPubSubTransport
+import de.titansmp.core.event.RedisEventBus
 import de.titansmp.core.redis.LettuceRedisService
 import de.titansmp.core.redis.RedisService
 import de.titansmp.core.player.DefaultPlayerService
@@ -29,6 +32,9 @@ class TitanSmpRuntime(
     private val databaseFactory: (DatabaseConfig) -> DatabaseService = ::HikariDatabaseService,
     private val migrationRunner: (DatabaseService) -> Unit = { DatabaseMigrator().migrate(it) },
     private val redisFactory: (RedisConfig) -> RedisService = ::LettuceRedisService,
+    private val eventBusFactory: (RedisService, String) -> EventBus = { redis, networkId ->
+        RedisEventBus(networkId, LettuceRedisPubSubTransport(redis.openPubSubConnection()))
+    },
     private val logger: Logger = LoggerFactory.getLogger(TitanSmpRuntime::class.java),
 ) : AutoCloseable {
     @Volatile
@@ -37,12 +43,18 @@ class TitanSmpRuntime(
 
     private var databaseService: DatabaseService? = null
     private var redisService: RedisService? = null
+    private var eventBusService: EventBus? = null
     private var networkServer: NetworkServer? = null
 
     /** Stateless facade over the same shared database pool used by every core repository. */
     fun playerService(): PlayerService {
         check(state == RuntimeState.READY) { "TitanSMP runtime must be ready before using player services" }
         return DefaultPlayerService(JdbcPlayerRepository(requireNotNull(databaseService).dataSource))
+    }
+
+    fun eventBus(): EventBus {
+        check(state == RuntimeState.READY) { "TitanSMP runtime must be ready before using the event bus" }
+        return requireNotNull(eventBusService)
     }
 
     @Synchronized
@@ -76,10 +88,14 @@ class TitanSmpRuntime(
             redis.start()
             logger.info("Redis connection established")
 
+            eventBusService = eventBusFactory(redis, configuration.networkId)
+            logger.info("Redis event bus subscribed for network {}", configuration.networkId)
+
             state = RuntimeState.READY
             logger.info("TitanSMP READY")
             return server
         } catch (failure: Throwable) {
+            logger.error("TitanSMP startup failed ({})", failure.cause?.javaClass?.simpleName ?: failure.javaClass.simpleName)
             closeAfterFailedStart(failure)
             state = RuntimeState.STOPPED
             networkServer = null
@@ -92,6 +108,8 @@ class TitanSmpRuntime(
         if (state == RuntimeState.STOPPED) return
 
         var closeFailure: Throwable? = null
+        closeFailure = closeService(eventBusService, closeFailure)
+        eventBusService = null
         closeFailure = closeService(redisService, closeFailure)
         redisService = null
         closeFailure = closeService(databaseService, closeFailure)
@@ -106,6 +124,8 @@ class TitanSmpRuntime(
     }
 
     private fun closeAfterFailedStart(primaryFailure: Throwable) {
+        closeService(eventBusService, primaryFailure)
+        eventBusService = null
         closeService(redisService, primaryFailure)
         redisService = null
         closeService(databaseService, primaryFailure)

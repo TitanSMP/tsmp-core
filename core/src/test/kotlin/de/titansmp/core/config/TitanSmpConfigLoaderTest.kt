@@ -33,6 +33,7 @@ class TitanSmpConfigLoaderTest {
         assertEquals(ServerType.SMP, configuration.serverIdentity.type)
         assertEquals(ServerEnvironment.DEVELOPMENT, configuration.serverIdentity.environment)
         assertEquals("TitanSMP", configuration.networkName)
+        assertEquals("titansmp", configuration.networkId)
         assertEquals("database-secret", configuration.database.password)
         assertEquals("redis-secret", configuration.redis.password)
         assertFalse(configuration.toString().contains("database-secret"))
@@ -59,6 +60,7 @@ class TitanSmpConfigLoaderTest {
                 "TITANSMP_SERVER_TYPE" to "LOBBY",
                 "TITANSMP_ENVIRONMENT" to "PRODUCTION",
                 "TITANSMP_NETWORK_NAME" to "TitanSMP",
+                "TITANSMP_NETWORK_ID" to "titan-staging",
                 "TITANSMP_DATABASE_HOST" to "db.internal",
                 "TITANSMP_DATABASE_NAME" to "titansmp",
                 "TITANSMP_DATABASE_USERNAME" to "network-service",
@@ -68,6 +70,7 @@ class TitanSmpConfigLoaderTest {
         )
 
         assertEquals("proxy-01", configuration.serverIdentity.id)
+        assertEquals("titan-staging", configuration.networkId)
         assertEquals("db.internal", configuration.database.host)
         assertEquals("redis.internal", configuration.redis.host)
         assertEquals(3306, configuration.database.port)

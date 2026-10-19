@@ -7,11 +7,13 @@ import de.titansmp.api.server.ServerType
 class TitanSmpConfig(
     val serverIdentity: ServerIdentity,
     val networkName: String,
+    val networkId: String = networkName.lowercase().replace(Regex("[^a-z0-9._-]+"), "-").trim('-'),
     val database: DatabaseConfig,
     val redis: RedisConfig,
 ) {
     init {
         require(networkName.isNotBlank()) { "Network name must not be blank" }
+        require(networkId.matches(Regex("[a-z0-9][a-z0-9._-]{0,63}"))) { "Network ID must be a lowercase namespace identifier" }
     }
 
     override fun toString(): String =

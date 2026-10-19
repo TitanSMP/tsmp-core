@@ -10,3 +10,5 @@ libraries:
   - org.flywaydb:flyway-core:13.10.2
   - org.flywaydb:flyway-mysql:13.10.2
   - io.lettuce:lettuce-core:7.8.0.RELEASE
+  - com.fasterxml.jackson.module:jackson-module-kotlin:2.22.2
+  - com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.22.2

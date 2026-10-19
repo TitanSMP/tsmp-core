@@ -10,11 +10,14 @@ dependencies {
     implementation("org.flywaydb:flyway-core:13.10.2")
     implementation("org.flywaydb:flyway-mysql:13.10.2")
     implementation("io.lettuce:lettuce-core:7.8.0.RELEASE")
+    implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.22.2")
+    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.22.2")
     implementation("org.slf4j:slf4j-api:2.0.17")
 
     testImplementation(kotlin("test-junit5"))
     testImplementation("org.testcontainers:testcontainers-mariadb:2.0.5")
     testImplementation("org.testcontainers:testcontainers-junit-jupiter:2.0.5")
+    testImplementation("org.testcontainers:testcontainers:2.0.5")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.14.2")
 }
 

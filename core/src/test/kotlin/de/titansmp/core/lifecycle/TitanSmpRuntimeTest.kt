@@ -3,6 +3,12 @@ package de.titansmp.core.lifecycle
 import de.titansmp.api.server.ServerEnvironment
 import de.titansmp.api.server.ServerIdentity
 import de.titansmp.api.server.ServerType
+import de.titansmp.api.event.EventBus
+import de.titansmp.api.event.EventEnvelope
+import de.titansmp.api.event.EventListener
+import de.titansmp.api.event.EventSubscription
+import de.titansmp.api.event.EventType
+import de.titansmp.api.event.NetworkEvent
 import de.titansmp.core.config.DatabaseConfig
 import de.titansmp.core.config.RedisConfig
 import de.titansmp.core.config.TitanSmpConfig
@@ -27,6 +33,7 @@ class TitanSmpRuntimeTest {
             databaseFactory = { events += "database.create"; database },
             migrationRunner = { events += "migrations" },
             redisFactory = { events += "redis.create"; redis },
+            eventBusFactory = { _, _ -> events += "eventBus.create"; FakeEventBus(events) },
             logger = LoggerFactory.getLogger("test-runtime"),
         )
 
@@ -41,7 +48,7 @@ class TitanSmpRuntimeTest {
         assertEquals(
             listOf(
                 "config", "database.create", "database.start", "migrations", "redis.create", "redis.start",
-                "redis.close", "database.close",
+                "eventBus.create", "eventBus.close", "redis.close", "database.close",
             ),
             events,
         )
@@ -74,6 +81,7 @@ class TitanSmpRuntimeTest {
             databaseFactory = { FakeDatabaseService(events) },
             migrationRunner = {},
             redisFactory = { FakeRedisService(events) },
+            eventBusFactory = { _, _ -> FakeEventBus(events) },
             logger = LoggerFactory.getLogger("test-runtime-repeat"),
         )
 
@@ -118,5 +126,11 @@ class TitanSmpRuntimeTest {
         override fun close() {
             events += "redis.close"
         }
+    }
+
+    private class FakeEventBus(private val events: MutableList<String>) : EventBus {
+        override fun publish(event: NetworkEvent) = java.util.concurrent.CompletableFuture.completedFuture(Unit)
+        override fun subscribe(eventType: EventType, listener: EventListener) = EventSubscription {}
+        override fun close() { events += "eventBus.close" }
     }
 }

@@ -34,6 +34,7 @@ Kotlin sources use the `de.titansmp` package root. Each module has a correspondi
 - **`api`** contains only public, platform-independent interfaces, DTOs, enums, and contracts. It has no Paper, Bukkit, Velocity, MariaDB, or Redis implementation dependencies. Its server package defines `ServerIdentity`, `ServerType`, `ServerEnvironment`, and `NetworkServer`.
 - **`core`** contains shared implementations and central services. It owns configuration loading, the MariaDB pool and migration runner, the Redis client, the configured `NetworkServer` implementation, and startup/shutdown lifecycle. Platform-specific code does not belong here.
 - **Player identity**: the public DTO and service contract live in `api`; the service and JDBC repository live in `core` and use the shared MariaDB pool.
+- **Event messaging**: platform-neutral events and `EventBus` contracts live in `api`; core owns the versioned JSON codec, Redis Pub/Sub transport, dispatch, and listener lifecycle. See [event-bus.md](event-bus.md).
 
 ### Platform integrations
 

@@ -39,9 +39,12 @@ class TitanSmpConfigLoader {
         val redisPassword = environment["TITANSMP_REDIS_PASSWORD"]
             ?: properties.getProperty("redis.password")
 
+        val networkName = value("network.name", "TITANSMP_NETWORK_NAME")
+        val defaultNetworkId = networkName.lowercase().replace(Regex("[^a-z0-9._-]+"), "-").trim('-').ifBlank { "titansmp" }
         return TitanSmpConfig(
             serverIdentity = identity,
-            networkName = value("network.name", "TITANSMP_NETWORK_NAME"),
+            networkName = networkName,
+            networkId = value("network.id", "TITANSMP_NETWORK_ID", defaultNetworkId),
             database = DatabaseConfig(
                 host = value("database.host", "TITANSMP_DATABASE_HOST"),
                 port = integer("database.port", "TITANSMP_DATABASE_PORT", 3306),

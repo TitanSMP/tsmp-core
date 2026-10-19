@@ -1,6 +1,6 @@
 # Shared Infrastructure
 
-Shared infrastructure lives in `core` and is platform-independent. Paper, Velocity, and future standalone services can construct `TitanSmpRuntime` with their own configuration source and logging integration. This repository does not yet wire the runtime into Paper or Velocity platform events.
+Shared infrastructure lives in `core` and is platform-independent. Paper and future standalone services can construct `TitanSmpRuntime` with their own configuration source and logging integration. Paper wires player lifecycle events to the shared identity service and EventBus; Velocity does not yet write presence state.
 
 ## Configuration
 
@@ -16,7 +16,7 @@ On Windows PowerShell:
 Copy-Item config/titansmp.example.properties config/titansmp.properties
 ```
 
-The example contains only dummy values. `config/titansmp.properties` is ignored by Git. Configuration is loaded by `TitanSmpConfigLoader` and includes an explicit server ID, server type, environment, network name, MariaDB connection and pool size, and Redis connection.
+The example contains only dummy values. `config/titansmp.properties` is ignored by Git. Configuration is loaded by `TitanSmpConfigLoader` and includes an explicit server ID, server type, environment, network name and event namespace ID, MariaDB connection and pool size, and Redis connection.
 
 Environment variables override their matching properties. Supported variables are:
 
@@ -26,6 +26,7 @@ Environment variables override their matching properties. Supported variables ar
 | `server.type` | `TITANSMP_SERVER_TYPE` |
 | `server.environment` | `TITANSMP_ENVIRONMENT` |
 | `network.name` | `TITANSMP_NETWORK_NAME` |
+| `network.id` | `TITANSMP_NETWORK_ID` |
 | `database.host` | `TITANSMP_DATABASE_HOST` |
 | `database.port` | `TITANSMP_DATABASE_PORT` |
 | `database.name` | `TITANSMP_DATABASE_NAME` |
@@ -46,9 +47,9 @@ TitanSMP uses the single MariaDB database named by the shared configuration. All
 
 ## Migrations
 
-Flyway migrations belong in `core/src/main/resources/db/migration/` and use versioned names such as `V1__create_network_metadata.sql`. Each new change gets a higher version; do not edit a migration after it has been applied to a shared database. Migration scripts must be reviewed and must not perform destructive changes. Flyway `clean` is disabled, baselining and out-of-order migrations are disabled, and the current repository contains no domain migration. Flyway creates its own schema history table when first run.
+Flyway migrations belong in `core/src/main/resources/db/migration/` and use versioned names such as `V1__create_network_metadata.sql`. Each new change gets a higher version; do not edit a migration after it has been applied to a shared database. Migration scripts must be reviewed and must not perform destructive changes. Flyway `clean` is disabled, baselining and out-of-order migrations are disabled. The current initial migration creates the minimal player identity table. Flyway creates its own schema history table when first run.
 
-When `TitanSmpRuntime.start()` runs, it starts the database pool and applies pending migrations before starting Redis. Flyway locks the schema history table while applying migrations, so concurrent backend startup against the same database is serialized.
+When `TitanSmpRuntime.start()` runs, it starts the database pool and applies pending migrations before starting Redis and subscribing the EventBus. Flyway locks the schema history table while applying migrations, so concurrent backend startup against the same database is serialized.
 
 To apply pending migrations locally, create `config/titansmp.properties`, start a local MariaDB using those values, then run:
 
@@ -62,9 +63,9 @@ Production migration scripts should be reviewed and deployed with the applicatio
 
 ## Redis service
 
-`LettuceRedisService` owns one shared Lettuce client and one shared command connection. Lettuce connections support concurrent use, so features reuse the core connection rather than creating clients or connections per feature. The service authenticates when `redis.password` or `TITANSMP_REDIS_PASSWORD` is provided and validates startup with `PING`.
+`LettuceRedisService` owns one shared Lettuce client and one shared command connection. Features reuse the core client rather than creating clients of their own. The event bus opens its dedicated Pub/Sub connection from this same client. The service authenticates when `redis.password` or `TITANSMP_REDIS_PASSWORD` is provided and validates startup with `PING`.
 
-The service exposes Redis commands for shared infrastructure. No feature event, pub/sub topic, or messaging protocol is defined here.
+The service exposes Redis commands for shared infrastructure. Redis Pub/Sub messaging and the `titansmp:<network-id>:events:v1` channel are documented in [event-bus.md](event-bus.md).
 
 ## Server identity
 
@@ -82,9 +83,10 @@ Supported initial server types are `LOBBY`, `SMP`, and `BEDWARS`; environments a
 4. Start and validate the MariaDB pool.
 5. Run pending migrations.
 6. Start and validate Redis.
-7. Enter `READY`.
+7. Start the Redis Pub/Sub EventBus subscription for the configured network ID.
+8. Enter `READY`.
 
-Shutdown closes Redis first, then the MariaDB pool, and enters `STOPPED`. If startup fails, already-started services are closed in reverse order. Runtime state is exposed as `STOPPED`, `STARTING`, or `READY`.
+Shutdown closes the EventBus and its dispatch workers, then Redis, then the MariaDB pool, and enters `STOPPED`. If startup fails, already-started services are closed in reverse order. Runtime state is exposed as `STOPPED`, `STARTING`, or `READY`.
 
 The core logs the server ID, type, environment, network name, and service readiness. It does not log passwords or connection URLs containing credentials. Database JDBC URLs intentionally exclude credentials.
 

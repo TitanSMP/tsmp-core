@@ -5,6 +5,7 @@ import io.lettuce.core.RedisClient
 import io.lettuce.core.RedisURI
 import io.lettuce.core.api.StatefulRedisConnection
 import io.lettuce.core.api.sync.RedisCommands
+import io.lettuce.core.pubsub.StatefulRedisPubSubConnection
 
 class LettuceRedisService(
     private val configuration: RedisConfig,
@@ -17,6 +18,9 @@ class LettuceRedisService(
 
     override val commands: RedisCommands<String, String>
         get() = connection?.sync() ?: throw IllegalStateException("Redis service has not been started")
+
+    override fun openPubSubConnection(): StatefulRedisPubSubConnection<String, String> =
+        (client ?: throw IllegalStateException("Redis service has not been started")).connectPubSub()
 
     @Synchronized
     override fun start() {
