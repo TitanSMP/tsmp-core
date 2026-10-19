@@ -2,6 +2,8 @@ package de.titansmp.core.databridge
 
 import de.titansmp.api.databridge.PlayerState
 import de.titansmp.api.databridge.PotionEffectData
+import de.titansmp.api.databridge.AdvancementProgressData
+import de.titansmp.api.databridge.CriterionProgressData
 import de.titansmp.api.databridge.SerializedPlayerItem
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -14,13 +16,16 @@ import java.util.UUID
 internal object PlayerStatePayloadCodec {
     private val V1 = byteArrayOf(0x54, 0x53, 0x50, 0x53, 0, 0, 0, 1)
     private val V2 = byteArrayOf(0x54, 0x53, 0x50, 0x53, 0, 0, 0, 2)
+    private val V3 = byteArrayOf(0x54, 0x53, 0x50, 0x53, 0, 0, 0, 3)
     private const val MAX_BYTES = 64 * 1024 * 1024
     private const val MAX_EFFECTS = 256
     private const val MAX_HIDDEN_DEPTH = 16
+    private const val MAX_ADVANCEMENTS = 100_000
+    private const val MAX_CRITERIA_PER_ADVANCEMENT = 4_096
 
     fun encode(state: PlayerState): ByteArray = ByteArrayOutputStream().also { buffer ->
         DataOutputStream(buffer).use { out ->
-            out.write(V2); out.writeInt(PlayerState.INVENTORY_SLOTS)
+            out.write(V3); out.writeInt(PlayerState.INVENTORY_SLOTS)
             state.inventory.forEach { out.writeItem(it) }
             out.writeInt(PlayerState.ARMOR_SLOTS); state.armor.forEach { out.writeItem(it) }
             out.writeItem(state.offhand)
@@ -30,6 +35,17 @@ internal object PlayerStatePayloadCodec {
             require(state.potionEffects.size <= MAX_EFFECTS) { "Too many potion effects" }
             out.writeInt(state.potionEffects.size)
             state.potionEffects.forEach { out.writeEffect(it, 0) }
+            require(state.advancements.size <= MAX_ADVANCEMENTS) { "Too many advancements" }
+            out.writeInt(state.advancements.size)
+            state.advancements.forEach { advancement ->
+                out.writeUTF(advancement.advancementKey)
+                require(advancement.criteria.size <= MAX_CRITERIA_PER_ADVANCEMENT) { "Too many advancement criteria" }
+                out.writeInt(advancement.criteria.size)
+                advancement.criteria.forEach { criterion ->
+                    out.writeUTF(criterion.criterionKey)
+                    out.writeBoolean(criterion.completed)
+                }
+            }
         }
     }.toByteArray().also { require(it.size <= MAX_BYTES) { "Player state exceeds payload limit" } }
 
@@ -40,6 +56,7 @@ internal object PlayerStatePayloadCodec {
             val version = when {
                 magic.contentEquals(V1) -> 1
                 magic.contentEquals(V2) -> 2
+                magic.contentEquals(V3) -> 3
                 else -> error("Unsupported player-state encoding")
             }
             require(input.readInt() == PlayerState.INVENTORY_SLOTS)
@@ -51,18 +68,33 @@ internal object PlayerStatePayloadCodec {
             val level = input.readInt(); val totalExperience = input.readInt()
             val capturedAt: Instant
             val effects: List<PotionEffectData>
+            val advancements: List<AdvancementProgressData>
             if (version == 1) {
                 // Legacy payloads had no effect section; leave their state unchanged and effects empty.
                 capturedAt = Instant.EPOCH
                 effects = emptyList()
+                advancements = emptyList()
             } else {
                 capturedAt = Instant.ofEpochMilli(input.readLong())
                 val count = input.readInt()
                 require(count in 0..MAX_EFFECTS) { "Invalid potion effect count" }
                 effects = List(count) { input.readEffect(0) }
+                if (version >= 3) {
+                    val advancementCount = input.readInt()
+                    require(advancementCount in 0..MAX_ADVANCEMENTS) { "Invalid advancement count" }
+                    var totalCriteria = 0L
+                    advancements = List(advancementCount) {
+                        val key = input.readUTF()
+                        val criterionCount = input.readInt()
+                        require(criterionCount in 0..MAX_CRITERIA_PER_ADVANCEMENT) { "Invalid advancement criterion count" }
+                        totalCriteria += criterionCount
+                        require(totalCriteria <= 1_000_000L) { "Too many player advancement criteria" }
+                        AdvancementProgressData(key, List(criterionCount) { CriterionProgressData(input.readUTF(), input.readBoolean()) })
+                    }
+                } else advancements = emptyList()
             }
             require(input.available() == 0) { "Trailing bytes in player-state payload" }
-            return PlayerState(uuid, inventory, armor, offhand, health, food, experience, level, totalExperience, revision, effects, capturedAt)
+            return PlayerState(uuid, inventory, armor, offhand, health, food, experience, level, totalExperience, revision, effects, capturedAt, advancements)
         }
     }
 

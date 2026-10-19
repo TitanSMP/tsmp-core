@@ -2,7 +2,7 @@
 
 ## Scope
 
-Phases 1 and 1.5 provide UUID-keyed player snapshots and coordinated server transfer. Phase 2 adds active Potion Effects to that same snapshot. The EnderChest remains wholly owned by `modules/ender-chest` and is not represented in the player-state API or table.
+Phases 1 and 1.5 provide UUID-keyed player snapshots and coordinated server transfer. Phase 2 adds active Potion Effects and Phase 3 adds Advancement criterion progress to that same snapshot. The EnderChest remains wholly owned by `modules/ender-chest` and is not represented in the player-state API or table.
 
 The implementation is native TitanSMP code based on the source audit in [data-bridge-audit.md](data-bridge-audit.md). It does not use the archive as a runtime dependency and does not copy code from it.
 
@@ -43,7 +43,7 @@ The ZIP archive is not modified, unpacked, included, or used as a dependency. Th
 
 Flyway `V3__create_player_state.sql` creates one `player_state` row per UUID with `state_payload LONGBLOB`, `revision`, and `updated_at`. The row references `players.uuid`; it has no server-specific key and contains no EnderChest, economy, or statistics data. Storing the selected snapshot in one binary payload means all Phase 1 fields are replaced together.
 
-The payload has a magic/version header, explicit slot counts, length-prefixed Paper item bytes, scalar values, effect records, a 64 MiB upper bound, and strict validation on decode. Version 2 adds the capture instant and potion effect list. Version 1 payloads remain readable; missing effects decode to an empty list and require no SQL migration. Database calls run on a dedicated worker executor; Paper object capture/application stays on the Paper main thread.
+The payload has a magic/version header, explicit slot counts, length-prefixed Paper item bytes, scalar values, effect and advancement records, a 64 MiB upper bound, and strict validation on decode. Version 2 adds the capture instant and potion effect list. Version 3 adds criterion-level advancement progress. Version 1 payloads decode with empty effects and advancements; version 2 retains effects and decodes advancements as empty. No SQL migration is needed. Database calls run on a dedicated worker executor; Paper object capture/application stays on the Paper main thread.
 
 For a first save, a conditional `INSERT ... SELECT` requires the online UUID to belong to the current server. Later saves use one `UPDATE` with `WHERE revision = expectedRevision` and the same server ownership condition. MariaDB's single-row update is atomic. A duplicate initial insert or mismatched revision is rejected; no merge is attempted. No distributed lock is used.
 
@@ -94,6 +94,16 @@ Death is treated as a dirty-state transition. The normal lifecycle snapshot read
 
 This phase synchronizes the state visible to Paper when a lifecycle snapshot occurs. It does not define external plugin effect ownership or per-effect exemptions. Effects from other plugins are included in the complete snapshot, with no per-tick persistence or general external-effect API.
 
+## Advancements (Phase 3)
+
+The API stores an `AdvancementProgressData` per namespaced advancement key and a `CriterionProgressData` for every criterion in the server's loaded definition, including both completed and incomplete criteria. Snapshots enumerate Paper's current advancement iterator and read live `AdvancementProgress` values; no local progress cache is used. Vanilla and plugin namespaces are treated uniformly. A registry definition is not copied: titles, icons, parents, rewards, and other definition data remain server-owned. The stored payload is retained for advancement keys absent on the target and for criterion names that do not match the target's version. Target-only advancements that have no state entry are outside that snapshot and are left alone.
+
+Restoration uses Paper's per-player `AdvancementProgress` award/revoke API for safe changes. The algorithm applies the saved true/false criterion map without merging target-only awards. It revokes target criteria that the saved state marks false, and awards saved criteria when the resulting target progress stays incomplete. If a saved complete state would cause an incomplete target advancement to transition to complete, TitanSMP defers that advancement and retains the canonical saved criterion state in the next snapshots. It likewise avoids changing criteria on an already-complete target when that change could make it incomplete and then complete again. This prevents synchronization itself from executing advancement rewards.
+
+Paper exposes `getDateAwarded` as a read-only completion date and marks awarded criteria at the current time. There is no public way to set the original completion timestamp. It is therefore intentionally not stored; only criterion completion booleans are synchronized. Reward-free completion restore is also not exposed, and the criterion grant API may execute the advancement definition's rewards as part of a completion. For that reason, a completed saved advancement is not forced to completion on a target where it is currently incomplete. Its full state remains in MariaDB and Redis/transfer revision flow, but the target's visible local progress can remain incomplete until the player naturally completes it there. This is a documented fidelity limit of the public API. External plugins that attach rewards to criterion-grant events may also react to safe partial awards; TitanSMP cannot suppress those callbacks while using the public progress API.
+
+Paper 26.3 has a cancellable `PlayerAdvancementCriterionGrantEvent`, which reports a grant after it occurs and revokes that criterion if cancelled. `PlayerAdvancementDoneEvent` reports completion but is not cancellable. No corresponding public revoke event is present in this API version, so snapshots read current progress on the existing quit, transfer, and shutdown lifecycle. Grant/completion events mark state dirty; they never write directly to MariaDB. Advancement data shares the same state revision and compare-and-set write as inventory and effects. Death and respawn do not clear advancements.
+
 ## Explicitly excluded from current phases
 
-Advancements, Statistics, Maps, PDC player state, Location, Gamemode, Flight, Companions, separate Gamemode Inventories, EnderChest, Economy, Moderation, Chat, Friends, Clans, Discord, and Web API behavior are not synchronized here. ItemStack PDC remains included as part of the native item bytes; this does not add general player PDC synchronization.
+Statistics, Maps, PDC player state, Location, Gamemode, Flight, Companions, separate Gamemode Inventories, EnderChest, Economy, Moderation, Chat, Friends, Clans, Discord, and Web API behavior are not synchronized here. ItemStack PDC remains included as part of the native item bytes; this does not add general player PDC synchronization.

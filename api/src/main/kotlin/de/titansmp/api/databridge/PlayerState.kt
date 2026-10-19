@@ -32,6 +32,7 @@ data class PlayerState(
     val potionEffects: List<PotionEffectData> = emptyList(),
     /** Wall-clock instant at which finite effect durations were captured. */
     val capturedAt: Instant = Instant.ofEpochMilli(System.currentTimeMillis()),
+    val advancements: List<AdvancementProgressData> = emptyList(),
 ) {
     init {
         require(inventory.size == INVENTORY_SLOTS) { "Main inventory must contain $INVENTORY_SLOTS slots" }
@@ -42,6 +43,7 @@ data class PlayerState(
         require(level >= 0 && totalExperience >= 0) { "Experience values cannot be negative" }
         require(revision >= 0) { "Revision cannot be negative" }
         require(potionEffects.map { it.type }.distinct().size == potionEffects.size) { "Potion effect types must be unique" }
+        require(advancements.map { it.advancementKey }.distinct().size == advancements.size) { "Advancement keys must be unique" }
     }
 
     fun withRevision(value: Long): PlayerState = copy(revision = value)
@@ -50,6 +52,21 @@ data class PlayerState(
         const val INVENTORY_SLOTS = 36
         const val ARMOR_SLOTS = 4
     }
+}
+
+/** Player-specific progress only; advancement definitions remain server-owned. */
+data class AdvancementProgressData(
+    val advancementKey: String,
+    val criteria: List<CriterionProgressData>,
+) {
+    init {
+        require(advancementKey.matches(Regex("[a-z0-9._-]+:[a-z0-9/._-]+"))) { "Advancement key must be namespaced" }
+        require(criteria.map { it.criterionKey }.distinct().size == criteria.size) { "Criterion keys must be unique" }
+    }
+}
+
+data class CriterionProgressData(val criterionKey: String, val completed: Boolean) {
+    init { require(criterionKey.isNotBlank() && criterionKey.length <= 32_000) { "Invalid criterion key" } }
 }
 
 /** Platform-neutral effect snapshot. Durations are ticks; infinite effects retain their special semantics. */

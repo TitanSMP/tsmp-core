@@ -13,6 +13,8 @@ import de.titansmp.api.event.EventListener
 import de.titansmp.api.event.EventSubscription
 import de.titansmp.api.databridge.SerializedPlayerItem
 import de.titansmp.api.databridge.PotionEffectData
+import de.titansmp.api.databridge.AdvancementProgressData
+import de.titansmp.api.databridge.CriterionProgressData
 import de.titansmp.api.event.EventBus
 import de.titansmp.api.event.EventMetadata
 import de.titansmp.paper.serialization.PaperItemStackCodec
@@ -28,6 +30,7 @@ import org.bukkit.event.player.PlayerItemConsumeEvent
 import org.bukkit.event.entity.FoodLevelChangeEvent
 import org.bukkit.event.entity.EntityPotionEffectEvent
 import org.bukkit.event.entity.PlayerDeathEvent
+import org.bukkit.event.player.PlayerAdvancementDoneEvent
 import org.bukkit.event.inventory.InventoryClickEvent
 import org.bukkit.event.inventory.InventoryDragEvent
 import org.bukkit.event.player.PlayerDropItemEvent
@@ -40,6 +43,9 @@ import org.bukkit.inventory.ItemStack
 import org.bukkit.NamespacedKey
 import org.bukkit.Registry
 import org.bukkit.potion.PotionEffect
+import com.destroystokyo.paper.event.player.PlayerAdvancementCriterionGrantEvent
+import org.bukkit.advancement.Advancement
+import org.bukkit.advancement.AdvancementProgress
 import org.bukkit.plugin.java.JavaPlugin
 import java.util.UUID
 import java.time.Instant
@@ -59,11 +65,15 @@ class PlayerDataPaperModule(
     private val logger: Logger = plugin.logger,
     private val io: ExecutorService = Executors.newSingleThreadExecutor { task -> Thread(task, "titansmp-player-state-db").apply { isDaemon = true } },
     private val transferTimeoutMs: Long = 5_000,
+    private val advancementAccess: PaperAdvancementAccess = BukkitPaperAdvancementAccess,
 ) : Listener {
     private val loading = ConcurrentHashMap.newKeySet<UUID>()
     private val states = ConcurrentHashMap<UUID, PlayerState>()
     private val saves = ConcurrentHashMap.newKeySet<CompletableFuture<*>>()
     private val dirtyPotionEffects = ConcurrentHashMap.newKeySet<UUID>()
+    private val dirtyAdvancements = ConcurrentHashMap.newKeySet<UUID>()
+    private val deferredAdvancements = ConcurrentHashMap<UUID, MutableSet<String>>()
+    private val restoringAdvancements = ConcurrentHashMap.newKeySet<UUID>()
     private val incoming = ConcurrentHashMap<UUID, PlayerTransferPrepare>()
     private val ready = ConcurrentHashMap<UUID, PlayerTransferReady>()
     private val subscriptions = mutableListOf<EventSubscription>()
@@ -174,14 +184,14 @@ class PlayerDataPaperModule(
             publishTransferFailure(event, "source-state-not-loaded")
             return@onMain
         }
-        val next = try { snapshot(player, baseline.revision) } catch (failure: Throwable) {
+        val next = try { snapshot(player, baseline.revision, baseline) } catch (failure: Throwable) {
             loading -= event.playerUuid
             sourceTransfers.remove(event.playerUuid, event.transferId)
             logger.severe("Could not capture state for transfer ${event.transferId}: ${failure.message}")
             publishTransferFailure(event, "state-capture-failed")
             return@onMain
         }
-        val save = if (sameState(baseline, next) && baseline.revision > 0 && event.playerUuid !in dirtyPotionEffects) CompletableFuture.completedFuture(baseline)
+        val save = if (sameState(baseline, next) && baseline.revision > 0 && event.playerUuid !in dirtyPotionEffects && event.playerUuid !in dirtyAdvancements) CompletableFuture.completedFuture(baseline)
             else service.save(next, serverId).toCompletableFuture()
         track(save)
         save.whenComplete { saved, failure -> onMain {
@@ -191,26 +201,57 @@ class PlayerDataPaperModule(
                 logger.severe("Could not save state for transfer ${event.transferId}: ${failure.cause?.message ?: failure.message}")
                 Bukkit.getPlayer(event.playerUuid)?.sendMessage(net.kyori.adventure.text.Component.text("Your data could not be saved, so the transfer was cancelled."))
                 publishTransferFailure(event, "state-save-failed")
-            } else {
-                if (sourceTransfers[event.playerUuid] != event.transferId) return@onMain
-                states[event.playerUuid] = saved
-                dirtyPotionEffects -= event.playerUuid
-                eventBus.publish(PlayerTransferReady(
-                    EventMetadata(eventType = PlayerTransferReady.TYPE, sourceServerId = serverId), event.transferId,
-                    event.playerUuid, event.sourceServerId, event.targetServerId, saved.revision, Instant.now(),
-                )).whenComplete { _, publishFailure -> if (publishFailure != null) {
-                    loading -= event.playerUuid
-                    sourceTransfers.remove(event.playerUuid, event.transferId)
-                    logger.severe("Could not publish ready for transfer ${event.transferId}: ${publishFailure.message}")
-                } }
-                CompletableFuture.delayedExecutor(transferTimeoutMs * 3, java.util.concurrent.TimeUnit.MILLISECONDS).execute {
-                    if (sourceTransfers.remove(event.playerUuid, event.transferId)) onMain {
-                        loading -= event.playerUuid
-                        Bukkit.getPlayer(event.playerUuid)?.sendMessage(net.kyori.adventure.text.Component.text("Transfer timed out; you remain on this server."))
-                    }
-                }
+            } else if (sourceTransfers[event.playerUuid] == event.transferId) {
+                persistLatestAdvancementsBeforeReady(event, player, saved, 0)
             }
         } }
+    }
+
+    /** Re-snapshot after each async save so grants made while the transfer save was in flight are included. */
+    private fun persistLatestAdvancementsBeforeReady(event: PlayerTransferPrepare, player: Player, saved: PlayerState, attempts: Int) {
+        if (sourceTransfers[event.playerUuid] != event.transferId) return
+        val latest = try { snapshot(player, saved.revision, saved) } catch (failure: Throwable) {
+            failSourceTransfer(event, "state-capture-failed", "Could not capture final state for transfer ${event.transferId}: ${failure.message}")
+            return
+        }
+        if (latest.advancements != saved.advancements) {
+            if (attempts >= 3) {
+                failSourceTransfer(event, "advancement-state-kept-changing", "Advancement progress kept changing during transfer ${event.transferId}")
+                return
+            }
+            val resave = service.save(latest, serverId).toCompletableFuture()
+            track(resave)
+            resave.whenComplete { updated, failure -> onMain {
+                if (failure != null) failSourceTransfer(event, "state-save-failed", "Could not save final advancement state for transfer ${event.transferId}: ${failure.cause?.message ?: failure.message}")
+                else persistLatestAdvancementsBeforeReady(event, player, updated, attempts + 1)
+            } }
+            return
+        }
+        states[event.playerUuid] = saved
+        dirtyPotionEffects -= event.playerUuid
+        dirtyAdvancements -= event.playerUuid
+        eventBus.publish(PlayerTransferReady(
+            EventMetadata(eventType = PlayerTransferReady.TYPE, sourceServerId = serverId), event.transferId,
+            event.playerUuid, event.sourceServerId, event.targetServerId, saved.revision, Instant.now(),
+        )).whenComplete { _, publishFailure -> if (publishFailure != null) {
+            loading -= event.playerUuid
+            sourceTransfers.remove(event.playerUuid, event.transferId)
+            logger.severe("Could not publish ready for transfer ${event.transferId}: ${publishFailure.message}")
+        } }
+        CompletableFuture.delayedExecutor(transferTimeoutMs * 3, java.util.concurrent.TimeUnit.MILLISECONDS).execute {
+            if (sourceTransfers.remove(event.playerUuid, event.transferId)) onMain {
+                loading -= event.playerUuid
+                Bukkit.getPlayer(event.playerUuid)?.sendMessage(net.kyori.adventure.text.Component.text("Transfer timed out; you remain on this server."))
+            }
+        }
+    }
+
+    private fun failSourceTransfer(event: PlayerTransferPrepare, reason: String, message: String) {
+        loading -= event.playerUuid
+        sourceTransfers.remove(event.playerUuid, event.transferId)
+        logger.severe(message)
+        Bukkit.getPlayer(event.playerUuid)?.sendMessage(net.kyori.adventure.text.Component.text("Your data could not be saved, so the transfer was cancelled."))
+        publishTransferFailure(event, reason)
     }
 
     private fun publishTransferFailure(event: PlayerTransferPrepare, reason: String) {
@@ -252,10 +293,17 @@ class PlayerDataPaperModule(
                     player.kick(net.kyori.adventure.text.Component.text("Your latest player data is not available. Please reconnect."))
                     return@onMain
                 }
-                if (loaded != null) apply(player, loaded) else resetToVanillaDefaults(player)
-                val baseline = snapshot(player, revision = loaded?.revision ?: 0)
+                deferredAdvancements.remove(player.uniqueId)
+                restoringAdvancements += player.uniqueId
+                try {
+                    if (loaded != null) apply(player, loaded) else resetToVanillaDefaults(player)
+                } finally {
+                    restoringAdvancements -= player.uniqueId
+                }
+                val baseline = snapshot(player, revision = loaded?.revision ?: 0, previous = loaded)
                 states[player.uniqueId] = baseline
                 dirtyPotionEffects -= player.uniqueId
+                dirtyAdvancements -= player.uniqueId
                 transferReady?.let { readyEvent ->
                     eventBus.publish(PlayerTransferCompleted(EventMetadata(eventType = PlayerTransferCompleted.TYPE, sourceServerId = serverId),
                         readyEvent.transferId, player.uniqueId, readyEvent.sourceServerId, serverId, baseline.revision, Instant.now()))
@@ -282,9 +330,17 @@ class PlayerDataPaperModule(
         incoming.remove(player.uniqueId)
         ready.remove(player.uniqueId)
         sourceTransfers.remove(player.uniqueId)
+        val baseline = states.remove(player.uniqueId) ?: run {
+            dirtyPotionEffects.remove(player.uniqueId)
+            dirtyAdvancements.remove(player.uniqueId)
+            deferredAdvancements.remove(player.uniqueId)
+            return CompletableFuture.completedFuture(Unit)
+        }
+        val saving = saveIfDirty(player, baseline)
         dirtyPotionEffects.remove(player.uniqueId)
-        val baseline = states.remove(player.uniqueId) ?: return CompletableFuture.completedFuture(Unit)
-        return saveIfDirty(player, baseline)
+        dirtyAdvancements.remove(player.uniqueId)
+        deferredAdvancements.remove(player.uniqueId)
+        return saving
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -323,6 +379,22 @@ class PlayerDataPaperModule(
         dirtyPotionEffects += event.entity.uniqueId
     }
 
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    fun trackAdvancementCriterionGrant(event: PlayerAdvancementCriterionGrantEvent) {
+        val playerId = event.player.uniqueId
+        if (playerId in restoringAdvancements || (playerId in loading && !sourceTransfers.containsKey(playerId))) return
+        dirtyAdvancements += playerId
+        deferredAdvancements[playerId]?.remove(event.advancement.key.toString())
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    fun trackAdvancementCompletion(event: PlayerAdvancementDoneEvent) {
+        val playerId = event.player.uniqueId
+        if (playerId in restoringAdvancements || (playerId in loading && !sourceTransfers.containsKey(playerId))) return
+        dirtyAdvancements += playerId
+        deferredAdvancements[playerId]?.remove(event.advancement.key.toString())
+    }
+
     /** Snapshot all online players synchronously on disable, then persist and drain the DB worker. */
     fun flushAndClose(): CompletionStage<Unit> {
         accepting = false
@@ -338,13 +410,14 @@ class PlayerDataPaperModule(
     }
 
     private fun saveIfDirty(player: Player, baseline: PlayerState): CompletionStage<Unit> {
-        val next = try { snapshot(player, baseline.revision) } catch (failure: Throwable) {
+        val next = try { snapshot(player, baseline.revision, baseline) } catch (failure: Throwable) {
             logger.severe("Could not capture TitanSMP player state for ${player.uniqueId}: ${failure.message}")
             return CompletableFuture.failedFuture(failure)
         }
-        if (sameState(baseline, next) && baseline.revision > 0 && player.uniqueId !in dirtyPotionEffects) return CompletableFuture.completedFuture(Unit)
+        if (sameState(baseline, next) && baseline.revision > 0 && player.uniqueId !in dirtyPotionEffects && player.uniqueId !in dirtyAdvancements) return CompletableFuture.completedFuture(Unit)
         val saving = service.save(next, serverId).thenApply { saved ->
             dirtyPotionEffects -= player.uniqueId
+            dirtyAdvancements -= player.uniqueId
             eventBus.publish(PlayerStateUpdated(EventMetadata(eventType = PlayerStateUpdated.TYPE, sourceServerId = serverId), player.uniqueId, saved.revision))
                 .whenComplete { _, failure -> if (failure != null) logger.severe("Could not publish player-state update for ${player.uniqueId}: ${failure.message}") }
             Unit
@@ -362,9 +435,21 @@ class PlayerDataPaperModule(
         }
     }
 
-    private fun snapshot(player: Player, revision: Long): PlayerState {
+    private fun snapshot(player: Player, revision: Long, previous: PlayerState? = null): PlayerState {
         val inventory = player.inventory
         val armor = inventory.armorContents // Bukkit order: boots, leggings, chestplate, helmet
+        val advancements = advancementAccess.all().asSequence().map { advancement ->
+            val progress = advancementAccess.progress(player, advancement)
+            val awarded = progress.awardedCriteria.toSet()
+            AdvancementProgressData(
+                advancement.key.toString(),
+                advancement.criteria.sorted().map { criterion -> CriterionProgressData(criterion, criterion in awarded) },
+            )
+        }.toList().associateBy { it.advancementKey }.toMutableMap()
+        val deferred = deferredAdvancements[player.uniqueId].orEmpty()
+        previous?.advancements.orEmpty().filter { saved ->
+            saved.advancementKey in deferred || NamespacedKey.fromString(saved.advancementKey)?.let(advancementAccess::find) == null
+        }.forEach { advancements[it.advancementKey] = it }
         return PlayerState(
             player.uniqueId,
             inventory.storageContents.map(::encode),
@@ -378,10 +463,12 @@ class PlayerDataPaperModule(
             revision,
             player.activePotionEffects.map(::encodeEffect).sortedBy { it.type },
             Instant.ofEpochMilli(System.currentTimeMillis()),
+            advancements.values.sortedBy { it.advancementKey },
         )
     }
 
     private fun apply(player: Player, state: PlayerState) {
+        applyAdvancements(player, state.advancements)
         // A successfully loaded state is authoritative. Clear target-local/plugin effects only now.
         player.activePotionEffects.forEach { player.removePotionEffect(it.type) }
         val now = Instant.now()
@@ -408,6 +495,7 @@ class PlayerDataPaperModule(
     }
 
     private fun resetToVanillaDefaults(player: Player) {
+        applyAdvancements(player, emptyList())
         player.activePotionEffects.forEach { player.removePotionEffect(it.type) }
         player.inventory.storageContents = arrayOfNulls(PlayerState.INVENTORY_SLOTS)
         player.inventory.armorContents = arrayOfNulls(PlayerState.ARMOR_SLOTS)
@@ -424,6 +512,52 @@ class PlayerDataPaperModule(
         PaperItemStackCodec.encode(item)?.let(::SerializedPlayerItem)
 
     private fun decode(item: SerializedPlayerItem?): ItemStack? = PaperItemStackCodec.decode(item?.payload)
+
+    private fun applyAdvancements(player: Player, saved: List<AdvancementProgressData>) {
+        val savedByKey = saved.associateBy { it.advancementKey }
+        val deferred = deferredAdvancements.computeIfAbsent(player.uniqueId) { ConcurrentHashMap.newKeySet() }
+        val localKeys = mutableSetOf<String>()
+        advancementAccess.all().forEachRemaining { advancement ->
+            val key = advancement.key.toString()
+            localKeys += key
+            val progress = advancementAccess.progress(player, advancement)
+            val data = savedByKey[key]
+            if (data != null) applyAdvancement(player, advancement, progress, data, deferred)
+        }
+        saved.filter { it.advancementKey !in localKeys }.forEach { missing ->
+            deferred += missing.advancementKey
+            logger.warning("Keeping advancement '${missing.advancementKey}' in the saved player state because it is not registered on this server")
+        }
+    }
+
+    private fun applyAdvancement(
+        player: Player,
+        advancement: Advancement,
+        progress: AdvancementProgress,
+        saved: AdvancementProgressData,
+        deferred: MutableSet<String>,
+    ) {
+        val targetCriteria = advancement.criteria.toSet()
+        val savedByCriterion = saved.criteria.associate { it.criterionKey to it.completed }
+        if (savedByCriterion.keys.any { it !in targetCriteria }) {
+            deferred += saved.advancementKey
+            logger.warning("Keeping unmatched criteria for advancement '${saved.advancementKey}' in the saved player state")
+        }
+        val desired = targetCriteria.filterTo(mutableSetOf()) { savedByCriterion[it] == true }
+        val desiredCompletes = advancement.requirements.requirements.all { requirement ->
+            requirement.requiredCriteria.any { it in desired }
+        }
+        val current = progress.awardedCriteria.toSet()
+        if ((desiredCompletes && !progress.isDone) || (desiredCompletes && current != desired)) {
+            // Awarding the final criterion can execute arbitrary definition rewards; Paper exposes no reward-free grant.
+            deferred += saved.advancementKey
+            logger.warning("Deferring completion restore for advancement '${saved.advancementKey}' to avoid replaying rewards")
+            return
+        }
+        (current - desired).forEach(progress::revokeCriteria)
+        (desired - current).forEach(progress::awardCriteria)
+        if (savedByCriterion.keys.all { it in targetCriteria }) deferred -= saved.advancementKey
+    }
 
     private fun encodeEffect(effect: PotionEffect): PotionEffectData = PotionEffectData(
         effect.type.key.toString(),

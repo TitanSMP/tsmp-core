@@ -44,6 +44,8 @@ import java.util.UUID
 import java.time.Instant
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionStage
+import org.bukkit.advancement.Advancement
+import org.bukkit.advancement.AdvancementProgress
 
 class PlayerDataPaperModuleTest {
     private lateinit var server: ServerMock
@@ -51,13 +53,15 @@ class PlayerDataPaperModuleTest {
     private lateinit var service: FakePlayerDataService
     private lateinit var eventBus: RecordingEventBus
     private lateinit var module: PlayerDataPaperModule
+    private lateinit var advancementAccess: TestAdvancementAccess
 
     @BeforeEach fun setUp() {
         server = MockBukkit.mock()
         plugin = MockBukkit.load(TestPlugin::class.java)
         service = FakePlayerDataService()
         eventBus = RecordingEventBus()
-        module = PlayerDataPaperModule(plugin, service, "smp-01", eventBus)
+        advancementAccess = TestAdvancementAccess()
+        module = PlayerDataPaperModule(plugin, service, "smp-01", eventBus, advancementAccess = advancementAccess)
         module.register()
     }
 
@@ -148,6 +152,58 @@ class PlayerDataPaperModuleTest {
         module.saveOnQuit(player).toCompletableFuture().join()
 
         assertTrue(service.saves.single().potionEffects.isEmpty())
+    }
+
+    @Test fun `restoration replaces partial criterion progress instead of merging`() {
+        val player = server.addPlayer()
+        advancementAccess.awarded += "b"
+        service.loaded = CompletableFuture.completedFuture(state(player.uniqueId).copy(advancements = listOf(
+            de.titansmp.api.databridge.AdvancementProgressData(advancementAccess.key.toString(), listOf(
+                de.titansmp.api.databridge.CriterionProgressData("a", true),
+                de.titansmp.api.databridge.CriterionProgressData("b", false),
+                de.titansmp.api.databridge.CriterionProgressData("c", false),
+            )),
+        )))
+
+        module.loadOnJoin(player)
+        server.scheduler.performOneTick()
+        player.inventory.setItem(0, ItemStack(Material.DIAMOND))
+        module.saveOnQuit(player).toCompletableFuture().join()
+
+        assertEquals(setOf("a"), advancementAccess.awarded)
+        assertEquals(listOf(true, false, false), service.saves.single().advancements.single().criteria.map { it.completed })
+    }
+
+    @Test fun `complete advancement remains canonical without replaying rewards`() {
+        val player = server.addPlayer()
+        val saved = de.titansmp.api.databridge.AdvancementProgressData(advancementAccess.key.toString(), advancementAccess.criteria.sorted().map {
+            de.titansmp.api.databridge.CriterionProgressData(it, true)
+        })
+        service.loaded = CompletableFuture.completedFuture(state(player.uniqueId).copy(advancements = listOf(saved)))
+
+        module.loadOnJoin(player)
+        server.scheduler.performOneTick()
+        player.inventory.setItem(0, ItemStack(Material.DIAMOND))
+        module.saveOnQuit(player).toCompletableFuture().join()
+
+        assertTrue(advancementAccess.awarded.isEmpty())
+        assertEquals(listOf(saved), service.saves.single().advancements)
+    }
+
+    @Test fun `unknown advancement key is retained through a target snapshot`() {
+        val player = server.addPlayer()
+        val unknown = de.titansmp.api.databridge.AdvancementProgressData("someplugin:custom", listOf(
+            de.titansmp.api.databridge.CriterionProgressData("first", true),
+            de.titansmp.api.databridge.CriterionProgressData("second", false),
+        ))
+        service.loaded = CompletableFuture.completedFuture(state(player.uniqueId).copy(advancements = listOf(unknown)))
+
+        module.loadOnJoin(player)
+        server.scheduler.performOneTick()
+        player.inventory.setItem(0, ItemStack(Material.DIAMOND))
+        module.saveOnQuit(player).toCompletableFuture().join()
+
+        assertEquals(listOf(unknown), service.saves.single().advancements.filter { it.advancementKey == unknown.advancementKey })
     }
 
     @Test fun `quit saves changed snapshot and publishes committed revision`() {
@@ -307,4 +363,5 @@ class PlayerDataPaperModuleTest {
         fun emit(event: NetworkEvent) { listeners[event.metadata.eventType]?.toList()?.forEach { it.onEvent(EventEnvelope(event)) } }
         override fun close() = Unit
     }
+
 }

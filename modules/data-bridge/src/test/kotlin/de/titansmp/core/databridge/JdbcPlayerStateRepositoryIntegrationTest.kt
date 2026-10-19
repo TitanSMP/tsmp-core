@@ -5,6 +5,8 @@ import de.titansmp.api.databridge.PlayerStateConflictException
 import de.titansmp.api.databridge.PlayerStateOwnershipException
 import de.titansmp.api.databridge.SerializedPlayerItem
 import de.titansmp.api.databridge.PotionEffectData
+import de.titansmp.api.databridge.AdvancementProgressData
+import de.titansmp.api.databridge.CriterionProgressData
 import java.time.Instant
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -70,5 +72,9 @@ class JdbcPlayerStateRepositoryIntegrationTest {
             PotionEffectData("minecraft:regeneration", 80, 0, false, true, true),
         ),
         capturedAt = Instant.parse("2026-10-19T12:00:00Z"),
+        advancements = listOf(
+            AdvancementProgressData("minecraft:story/mine_stone", listOf(CriterionProgressData("stone", true))),
+            AdvancementProgressData("titansmp:test", listOf(CriterionProgressData("criterion_a", true), CriterionProgressData("criterion_b", false))),
+        ),
     )
 }
