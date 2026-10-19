@@ -6,7 +6,10 @@ dependencies {
     implementation(project(":api"))
     implementation(project(":core"))
     implementation(project(":modules:data-bridge"))
+    implementation(project(":modules:moderation"))
+    runtimeOnly(project(":modules:ender-chest")) // Includes the already-applied Flyway V2 migration in the proxy classpath.
     compileOnly("com.velocitypowered:velocity-api:4.2.1-SNAPSHOT")
+    compileOnly("net.luckperms:api:5.5")
 }
 
 tasks.jar {

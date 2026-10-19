@@ -4,6 +4,7 @@ import com.google.inject.Inject
 import com.velocitypowered.api.event.EventTask
 import com.velocitypowered.api.event.Subscribe
 import com.velocitypowered.api.event.player.ServerPreConnectEvent
+import com.velocitypowered.api.event.connection.LoginEvent
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent
 import com.velocitypowered.api.plugin.Plugin
 import com.velocitypowered.api.proxy.ProxyServer
@@ -17,7 +18,16 @@ import de.titansmp.api.event.EventListener
 import de.titansmp.api.event.EventMetadata
 import de.titansmp.api.event.EventSubscription
 import de.titansmp.core.databridge.PlayerTransferRegistry
-import de.titansmp.core.lifecycle.TitanSmpEventRuntime
+import de.titansmp.core.lifecycle.TitanSmpRuntime
+import de.titansmp.core.moderation.DefaultModerationService
+import de.titansmp.core.moderation.JdbcModerationRepository
+import de.titansmp.core.moderation.LuckPermsModerationPermissionService
+import de.titansmp.api.moderation.PlayerBanned
+import de.titansmp.api.moderation.PlayerKicked
+import de.titansmp.api.moderation.PlayerMuted
+import de.titansmp.api.moderation.PlayerUnbanned
+import de.titansmp.api.moderation.PlayerUnmuted
+import net.luckperms.api.LuckPermsProvider
 import org.slf4j.Logger
 import java.time.Instant
 import java.util.UUID
@@ -33,7 +43,7 @@ class TitanSmpVelocityPlugin @Inject constructor(
     private val proxy: ProxyServer,
     private val logger: Logger,
 ) {
-    @Volatile private var runtime: TitanSmpEventRuntime? = null
+    @Volatile private var runtime: TitanSmpRuntime? = null
     @Volatile private var proxyServerId: String = "velocity"
     @Volatile private var timeoutMs: Long = 5_000
     @Volatile private var eventBus: EventBus? = null
@@ -41,15 +51,27 @@ class TitanSmpVelocityPlugin @Inject constructor(
     private val pending = ConcurrentHashMap<UUID, PendingTransfer>()
     private val byPlayer = ConcurrentHashMap<UUID, UUID>()
     private val subscriptions = mutableListOf<EventSubscription>()
+    @Volatile private var moderation: de.titansmp.api.moderation.ModerationService? = null
+    private val moderationExecutor = java.util.concurrent.Executors.newFixedThreadPool(2) { task ->
+        Thread(task, "titansmp-velocity-moderation-db").apply { isDaemon = true }
+    }
 
     @Subscribe
     fun onProxyInitialize(event: ProxyInitializeEvent): EventTask = EventTask.async {
         try {
-            val started = TitanSmpEventRuntime()
-            val bus = started.start()
+            val started = TitanSmpRuntime()
+            val serverIdentity = started.start()
+            val bus = started.eventBus()
             runtime = started
-            proxyServerId = started.serverId
+            proxyServerId = serverIdentity.identity.id
             timeoutMs = started.playerTransferTimeoutMs
+            moderation = DefaultModerationService(
+                JdbcModerationRepository(started.databaseDataSource()),
+                LuckPermsModerationPermissionService(LuckPermsProvider.get()),
+                bus,
+                moderationExecutor,
+                logger = java.util.logging.Logger.getLogger("de.titansmp.velocity.moderation"),
+            )
             registry = PlayerTransferRegistry(cancelPublisher = { transfer, reason ->
                 bus.publish(PlayerTransferFailed(
                     EventMetadata(eventType = PlayerTransferFailed.TYPE, sourceServerId = proxyServerId),
@@ -61,11 +83,56 @@ class TitanSmpVelocityPlugin @Inject constructor(
             subscriptions += bus.subscribe(PlayerTransferTargetPrepared.TYPE, EventListener(::onTransferEvent))
             subscriptions += bus.subscribe(PlayerTransferFailed.TYPE, EventListener(::onTransferEvent))
             subscriptions += bus.subscribe(PlayerTransferCompleted.TYPE, EventListener(::onTransferEvent))
+            subscriptions += bus.subscribe(PlayerBanned.TYPE, EventListener(::onModerationEvent))
+            subscriptions += bus.subscribe(PlayerUnbanned.TYPE, EventListener(::onModerationEvent))
+            subscriptions += bus.subscribe(PlayerMuted.TYPE, EventListener(::onModerationEvent))
+            subscriptions += bus.subscribe(PlayerUnmuted.TYPE, EventListener(::onModerationEvent))
+            subscriptions += bus.subscribe(PlayerKicked.TYPE, EventListener(::onModerationEvent))
             logger.info("TitanSMP Velocity transfer coordinator ready as {}", proxyServerId)
         } catch (failure: Throwable) {
+            subscriptions.forEach(EventSubscription::close)
+            subscriptions.clear()
+            try { runtime?.close() } catch (closeFailure: Throwable) { failure.addSuppressed(closeFailure) }
+            runtime = null
+            eventBus = null
+            moderation = null
             logger.error("TitanSMP Velocity failed to start", failure)
             throw failure
         }
+    }
+
+    /** A current persisted ban is checked before Velocity starts any backend connection. */
+    @Subscribe
+    fun onLogin(event: LoginEvent): EventTask {
+        val service = moderation ?: return EventTask.async { event.setResult(com.velocitypowered.api.event.ResultedEvent.ComponentResult.denied(net.kyori.adventure.text.Component.text("Network moderation checks are unavailable."))) }
+        return EventTask.resumeWhenComplete(service.checkPunishment(event.player.uniqueId, de.titansmp.api.moderation.PunishmentType.BAN).toCompletableFuture().handle { punishment, failure ->
+            when {
+                failure != null -> {
+                    logger.error("Could not check active ban for {}", event.player.uniqueId, failure)
+                    event.setResult(com.velocitypowered.api.event.ResultedEvent.ComponentResult.denied(net.kyori.adventure.text.Component.text("Player data is temporarily unavailable. Please try again.")))
+                }
+                punishment != null -> event.setResult(com.velocitypowered.api.event.ResultedEvent.ComponentResult.denied(net.kyori.adventure.text.Component.text("You are banned: ${punishment.reason}")))
+            }
+            Unit
+        })
+    }
+
+    private fun onModerationEvent(envelope: de.titansmp.api.event.EventEnvelope) {
+        val event = envelope.event
+        val targetId = when (event) {
+            is PlayerBanned -> event.targetId
+            is PlayerKicked -> event.targetId
+            is PlayerMuted -> event.targetId
+            is PlayerUnmuted -> event.targetId
+            is PlayerUnbanned -> return
+            else -> return
+        }
+        val reason = when (event) {
+            is PlayerBanned -> "You are banned: ${event.reason}"
+            is PlayerKicked -> event.reason
+            else -> return
+        }
+        proxy.getPlayer(targetId).ifPresent { it.disconnect(net.kyori.adventure.text.Component.text(reason)) }
     }
 
     @Subscribe
@@ -191,6 +258,8 @@ class TitanSmpVelocityPlugin @Inject constructor(
         pending.values.toList().forEach { fail(it, eventBus, "proxy-shutdown") }
         try { runtime?.close() } catch (failure: Exception) { logger.error("TitanSMP Velocity shutdown failed", failure) }
         runtime = null
+        moderation = null
+        moderationExecutor.shutdown()
         eventBus = null
     }
 

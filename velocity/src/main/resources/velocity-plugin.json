@@ -2,5 +2,11 @@
   "id": "titansmp-velocity",
   "name": "TitanSMP",
   "version": "${project.version}",
-  "main": "de.titansmp.velocity.TitanSmpVelocityPlugin"
+  "main": "de.titansmp.velocity.TitanSmpVelocityPlugin",
+  "dependencies": [
+    {
+      "id": "luckperms",
+      "optional": false
+    }
+  ]
 }

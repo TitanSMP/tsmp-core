@@ -7,6 +7,10 @@ import de.titansmp.paper.enderchest.EnderChestPaperModule
 import de.titansmp.core.databridge.DefaultPlayerDataService
 import de.titansmp.core.databridge.JdbcPlayerStateRepository
 import de.titansmp.paper.databridge.PlayerDataPaperModule
+import de.titansmp.core.moderation.DefaultModerationService
+import de.titansmp.core.moderation.JdbcModerationRepository
+import de.titansmp.core.moderation.LuckPermsModerationPermissionService
+import de.titansmp.paper.moderation.ModerationPaperModule
 import net.luckperms.api.LuckPerms
 import net.luckperms.api.util.Tristate
 import org.bukkit.entity.Player
@@ -21,6 +25,8 @@ class TitanSmpPaperPlugin : JavaPlugin() {
     private var identityListener: PaperPlayerIdentityListener? = null
     @Volatile private var enderChestModule: EnderChestPaperModule? = null
     @Volatile private var playerDataModule: PlayerDataPaperModule? = null
+    @Volatile private var moderationModule: ModerationPaperModule? = null
+    @Volatile private var moderationPersistence: java.util.concurrent.ExecutorService? = null
     private val runtimeReady = CompletableFuture<PaperPlayerIdentityRuntime>()
     private val lifecycle = Executors.newSingleThreadExecutor { task ->
         Thread(task, "titansmp-lifecycle").apply { isDaemon = true }
@@ -75,6 +81,23 @@ class TitanSmpPaperPlugin : JavaPlugin() {
                             playerDataModule?.saveOnQuit(player) ?: CompletableFuture.completedFuture(Unit)
                         }
                         val playerAdapter = luckPerms.getPlayerAdapter(Player::class.java)
+                        val moderationExecutor = Executors.newFixedThreadPool(2) { task ->
+                            Thread(task, "titansmp-moderation-db").apply { isDaemon = true }
+                        }
+                        moderationPersistence = moderationExecutor
+                        moderationModule = ModerationPaperModule(
+                            this,
+                            DefaultModerationService(
+                                JdbcModerationRepository(startedRuntime.databaseDataSource()),
+                                LuckPermsModerationPermissionService(luckPerms),
+                                startedRuntime.eventBus(),
+                                moderationExecutor,
+                            ),
+                            startedRuntime.playerService(),
+                            startedRuntime.eventBus(),
+                            serverIdentity.identity.id,
+                            moderationExecutor,
+                        ).also { it.register() }
                         val persistence = Executors.newSingleThreadExecutor { task ->
                             Thread(task, "titansmp-ender-chest-db").apply { isDaemon = true }
                         }
@@ -124,6 +147,11 @@ class TitanSmpPaperPlugin : JavaPlugin() {
         val playerData = playerDataModule
         playerDataModule = null
         val playerDataFlush = playerData?.flushAndClose()?.toCompletableFuture() ?: CompletableFuture.completedFuture(Unit)
+        moderationModule?.close()
+        moderationModule = null
+        val moderationWorker = moderationPersistence
+        moderationPersistence = null
+        moderationWorker?.shutdown()
         lifecycle.execute {
             listener?.awaitTermination()
             try {
@@ -135,6 +163,11 @@ class TitanSmpPaperPlugin : JavaPlugin() {
                 playerDataFlush.get(15, java.util.concurrent.TimeUnit.SECONDS)
             } catch (failure: Exception) {
                 logger.severe("TitanSMP player-state shutdown save failed: ${failure.message}")
+            }
+            try {
+                moderationWorker?.awaitTermination(15, java.util.concurrent.TimeUnit.SECONDS)
+            } catch (failure: Exception) {
+                logger.severe("TitanSMP moderation shutdown failed: ${failure.message}")
             }
             try {
                 runtime?.close()

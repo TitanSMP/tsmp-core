@@ -7,6 +7,7 @@ dependencies {
     implementation(project(":core"))
     implementation(project(":modules:ender-chest"))
     implementation(project(":modules:data-bridge"))
+    implementation(project(":modules:moderation"))
     compileOnly("io.papermc.paper:paper-api:26.3.build.205-stable")
     compileOnly("net.luckperms:api:5.5")
 
@@ -32,4 +33,5 @@ tasks.jar {
     from(project(":core").the<SourceSetContainer>()["main"].output)
     from(project(":modules:ender-chest").the<SourceSetContainer>()["main"].output)
     from(project(":modules:data-bridge").the<SourceSetContainer>()["main"].output)
+    from(project(":modules:moderation").the<SourceSetContainer>()["main"].output)
 }

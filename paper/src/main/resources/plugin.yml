@@ -9,12 +9,45 @@ commands:
   ec:
     description: Open your TitanSMP EnderChest
     usage: /ec
+  ban:
+    description: Ban a player from the TitanSMP network
+    usage: /ban <player> [reason]
+  unban:
+    description: Remove a player's active network ban
+    usage: /unban <player> [reason]
+  mute:
+    description: Mute a player on the TitanSMP network
+    usage: /mute <player> [duration] [reason]
+  unmute:
+    description: Remove a player's active network mute
+    usage: /unmute <player> [reason]
+  kick:
+    description: Kick an online player from the TitanSMP network
+    usage: /kick <player> [reason]
 permissions:
   titansmp.enderchest.rows.1:
     description: Grants access to one row of TitanSMP EnderChest storage
     default: true
   titansmp.enderchest.rows.2:
     description: Grants access to two rows of TitanSMP EnderChest storage
+    default: false
+  titansmp.moderation.ban:
+    description: Allows network bans
+    default: false
+  titansmp.moderation.unban:
+    description: Allows removing network bans
+    default: false
+  titansmp.moderation.mute:
+    description: Allows network mutes
+    default: false
+  titansmp.moderation.unmute:
+    description: Allows removing network mutes
+    default: false
+  titansmp.moderation.kick:
+    description: Allows network kicks
+    default: false
+  titansmp.moderation.immunity:
+    description: Prevents moderation punishments against this player
     default: false
 libraries:
   - org.jetbrains.kotlin:kotlin-stdlib:2.4.21

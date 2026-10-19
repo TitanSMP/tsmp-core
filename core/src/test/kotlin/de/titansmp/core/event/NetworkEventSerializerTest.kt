@@ -12,6 +12,11 @@ import de.titansmp.api.databridge.PlayerTransferTargetPrepared
 import de.titansmp.api.player.event.PlayerConnected
 import de.titansmp.api.player.event.PlayerDisconnected
 import de.titansmp.api.player.event.PlayerServerChanged
+import de.titansmp.api.moderation.PlayerBanned
+import de.titansmp.api.moderation.PlayerUnbanned
+import de.titansmp.api.moderation.PlayerMuted
+import de.titansmp.api.moderation.PlayerUnmuted
+import de.titansmp.api.moderation.PlayerKicked
 import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
@@ -67,6 +72,21 @@ class NetworkEventSerializerTest {
             PlayerTransferTargetPrepared(metadata.copy(eventType = PlayerTransferTargetPrepared.TYPE), transferId, player, "smp-01", "smp-02", timestamp),
             PlayerTransferFailed(metadata.copy(eventType = PlayerTransferFailed.TYPE), transferId, player, "smp-01", "smp-02", "timeout", timestamp),
             PlayerTransferCompleted(metadata.copy(eventType = PlayerTransferCompleted.TYPE), transferId, player, "smp-01", "smp-02", 43, timestamp),
+        )
+        events.forEach { assertEquals(it, serializer.deserialize(serializer.serialize(EventEnvelope(it))).event) }
+    }
+
+    @Test fun `moderation events round trip nullable actor and expiration fields`() {
+        val target = UUID.randomUUID()
+        val actor = UUID.randomUUID()
+        val action = UUID.randomUUID()
+        val at = Instant.parse("2026-10-19T12:00:00Z")
+        val events = listOf(
+            PlayerBanned(metadata.copy(eventType = PlayerBanned.TYPE), target, "Steve", action, actor, "Moderator", "Cheating", at, null, "smp-01"),
+            PlayerUnbanned(metadata.copy(eventType = PlayerUnbanned.TYPE), target, "Steve", action, null, "CONSOLE", null, at, "smp-01"),
+            PlayerMuted(metadata.copy(eventType = PlayerMuted.TYPE), target, "Steve", action, actor, "Moderator", "Spam", at, at.plusSeconds(600), "smp-01"),
+            PlayerUnmuted(metadata.copy(eventType = PlayerUnmuted.TYPE), target, "Steve", action, actor, "Moderator", null, at, "smp-01"),
+            PlayerKicked(metadata.copy(eventType = PlayerKicked.TYPE), target, "Steve", action, actor, "Moderator", "Rule violation", at, "smp-01"),
         )
         events.forEach { assertEquals(it, serializer.deserialize(serializer.serialize(EventEnvelope(it))).event) }
     }

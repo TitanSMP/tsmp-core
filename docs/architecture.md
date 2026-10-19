@@ -39,7 +39,7 @@ Kotlin sources use the `de.titansmp` package root. Each module has a correspondi
 ### Platform integrations
 
 - **`paper`** contains Paper-specific implementation and integration code. It may depend on `api` and `core`; the Paper API is confined to this module.
-- **`velocity`** contains Velocity-specific implementation and integration code. It may depend on `api` and `core`; the Velocity API is confined to this module. Its transfer coordinator uses the Redis-only event runtime and does not start MariaDB migrations.
+- **`velocity`** contains Velocity-specific implementation and integration code. It may depend on `api` and `core`; the Velocity API is confined to this module. Its runtime shares MariaDB, Flyway, Redis and the event bus with Paper so network moderation can check persisted bans before backend connection.
 
 Platform wiring belongs in these modules. Paper forwards join and quit events asynchronously to the shared player service. Velocity presence writes are deferred until a proxy/backend ownership protocol can prevent stale and duplicate state changes. Feature modules remain separate from Paper and Velocity APIs.
 
@@ -50,6 +50,7 @@ Each feature module encapsulates its own domain and uses shared infrastructure t
 - **`modules/data-bridge`** contains the TitanSMP-native player-state persistence service, JDBC repository, and versioned payload codec. Its platform-independent player/effect/advancement DTOs are in root `api`. Paper snapshot/application, effect lifecycle tracking, criterion progress and Paper-native item/effect conversion are in root `paper` to reuse the existing platform boundary without creating nested Gradle task cycles. Payload v2 adds Potion Effects; v3 adds Advancement criteria; v1/v2 decode with empty advancement lists. No SQL migration or second state table is used. The source audit is design input only; no upstream code was copied.
 - The Data Bridge transfer contracts and Redis event payloads live in `api`; the in-memory transfer lifecycle projection lives in `core`; Paper snapshots, locks, loads, and applies in `paper`; Velocity gates backend pre-connects in `velocity`. MariaDB stores only player state, and Redis Pub/Sub coordinates the transient protocol.
 - **`modules/ender-chest`** owns the platform-independent TitanSMP EnderChest storage service and JDBC repository. Its public DTO/service contract lives in root `api`; Paper GUI, command, item serialization, and vanilla EnderChest interception live in `paper`. Both entry points use the same UUID-keyed MariaDB row and revision-checked saves. LuckPerms supplies permission checks; it does not define storage identity or persisted rank state.
+- **`modules/moderation`** owns the shared moderation service, transactional JDBC repository, duration parser, and LuckPerms permission adapter. Public moderation contracts and Redis event DTOs live in `api`; Flyway owns the punishment and immutable action-history tables. Paper registers moderation commands and blocks muted Minecraft chat; Velocity denies active bans during login and disconnects players for network ban/kick events. Platform code delegates authorization, self-target checks, immunity, and persistence to the shared service.
 - **`modules/moderation`** owns moderation-related functionality.
 - **`modules/chat`** owns chat functionality.
 - **`modules/economy`** owns economy functionality.
@@ -73,8 +74,10 @@ Allowed Gradle project dependencies are:
 core      -> api
 modules/ender-chest -> api, core
 modules/data-bridge -> api, core
+modules/moderation -> api, core
 paper     -> api, core, modules/ender-chest, modules/data-bridge
-velocity  -> api, core, modules/data-bridge
+paper     -> modules/moderation
+velocity  -> api, core, modules/data-bridge, modules/ender-chest, modules/moderation
 modules/* -> api, core
 services/web-api -> (no project dependency declared yet)
 ```
@@ -83,6 +86,6 @@ services/web-api -> (no project dependency declared yet)
 
 `modules/discord` is a standalone process while retaining the feature-module dependency direction (`api` and `core`). `services/web-api` has no project dependency configured at this stage, keeping its future service calls separate from direct database access. The Data Bridge Paper adapter is hosted by the existing root `paper` project; it does not create a second Paper plugin or dependency cycle. Potion Effects and Advancement criterion progress are part of the existing revisioned state and Velocity transfer flow. Potion Effects use stable registry IDs, duration ticks, flags, infinite duration, hidden effect chains, and a capture timestamp. Advancement data stores namespaced keys with per-criterion completion booleans, not definitions. If restoring a completed advancement would execute rewards, the target progress is deferred while the complete canonical saved state remains in the same payload. There is no feature-specific Redis protocol or separate persistence path. Death and respawn do not remove advancements.
 
-These directions are acyclic: foundation contracts sit at the bottom, shared implementation depends on those contracts, and integrations/features depend on the foundation. Database and Redis connections are implemented only in `core`; feature modules reuse them. See [player-identity.md](player-identity.md), [ender-chest.md](ender-chest.md), and [data-bridge.md](data-bridge.md) for the implemented state and storage boundaries. No Phase 2 player-state features are included.
+These directions are acyclic: foundation contracts sit at the bottom, shared implementation depends on those contracts, and integrations/features depend on the foundation. Database and Redis connections are implemented only in `core`; feature modules reuse them. See [player-identity.md](player-identity.md), [ender-chest.md](ender-chest.md), [data-bridge.md](data-bridge.md), and [moderation.md](moderation.md) for implemented storage and service boundaries. Moderation does not create another connection or event bus.
 
 Player inventory map items use Paper's shared opaque item codec, but their referenced map assets and `MapView` state remain server-managed. The Paper 26.3 API does not expose a complete safe map-content export/import contract, and map IDs are not defined as network-global. TitanSMP does not put map pixels in `PlayerState`, remap IDs, or serialize plugin renderers. See [map-sync.md](map-sync.md) for the API analysis and limitations.

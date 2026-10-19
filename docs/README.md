@@ -13,8 +13,9 @@ See [data-bridge.md](data-bridge.md) for the Phase 1 player-state model, Phase 1
 See [map-sync.md](map-sync.md) for the Paper 26.3 map API analysis, the distinction between inventory map references and server map assets, and the current cross-server synchronization limits.
 See [data-bridge-audit.md](data-bridge-audit.md) for the source audit of the upstream `mc-data-bridge` archive and the proposed TitanSMP integration plan. The audit is documentation only; no upstream source or dependencies have been integrated.
 See [ender-chest.md](ender-chest.md) for the network-wide TitanSMP EnderChest architecture, persistence, access rules, and transfer consistency limits.
+See [moderation.md](moderation.md) for the network-wide moderation service, LuckPerms permissions and immunity, durable punishment history, Redis propagation, Paper commands, and Velocity ban enforcement.
 
-The repository is organized into platform-independent contracts (`api`), shared infrastructure (`core`), platform integrations (`paper` and `velocity`), feature modules under `modules/`, and standalone services under `services/`. Player identity, the independent EnderChest, and Data Bridge Phases 1, 1.5, 2, and 3 are implemented. Other feature modules remain structural placeholders. The Data Bridge uses MariaDB as its durable source of truth; Redis carries ephemeral transfer coordination and advisory notifications.
+The repository is organized into platform-independent contracts (`api`), shared infrastructure (`core`), platform integrations (`paper` and `velocity`), feature modules under `modules/`, and standalone services under `services/`. Player identity, the independent EnderChest, Data Bridge Phases 1, 1.5, 2, and 3, and the first network-wide moderation system are implemented. Other feature modules remain structural placeholders. MariaDB is the durable source of truth; Redis carries transfer coordination and network events.
 
 ## Module inventory
 
