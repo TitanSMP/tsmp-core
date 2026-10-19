@@ -1,12 +1,14 @@
 # TitanSMP Documentation
 
-This directory contains architecture and planning documents for the TitanSMP monorepo.
+This directory contains architecture and infrastructure documentation for the TitanSMP monorepo.
 
 ## Architecture
 
 See [architecture.md](architecture.md) for the current module layout, module responsibilities, and allowed dependency directions.
 
-The repository is organized into platform-independent contracts (`api`), shared infrastructure (`core`), platform integrations (`paper` and `velocity`), feature modules under `modules/`, and standalone services under `services/`. The modules currently provide build and source-set structure only; feature implementations are intentionally not included.
+See [infrastructure.md](infrastructure.md) for configuration, MariaDB, Flyway migrations, Redis, server identity, lifecycle, and operations guidance.
+
+The repository is organized into platform-independent contracts (`api`), shared infrastructure (`core`), platform integrations (`paper` and `velocity`), feature modules under `modules/`, and standalone services under `services/`. Shared infrastructure is implemented in `core`; feature implementations are intentionally not included.
 
 ## Module inventory
 

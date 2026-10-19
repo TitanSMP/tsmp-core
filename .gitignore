@@ -5,3 +5,8 @@ out/
 *.iml
 .kotlin/
 run/
+.env
+.env.*
+!.env.example
+config/titansmp.properties
+config/*.local.properties

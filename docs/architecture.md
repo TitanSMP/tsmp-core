@@ -1,6 +1,6 @@
 # Module Architecture
 
-TitanSMP is a Gradle multi-module monorepo. This document defines the responsibilities and permitted project dependencies for the current structure. The modules are scaffolding only; they do not yet contain feature implementations.
+TitanSMP is a Gradle multi-module monorepo. This document defines the responsibilities and permitted project dependencies for the current structure. The core now contains shared configuration, database, migration, Redis, server identity, and lifecycle infrastructure; feature implementations are still out of scope.
 
 ## Layout
 
@@ -31,8 +31,8 @@ Kotlin sources use the `de.titansmp` package root. Each module has a correspondi
 
 ### Foundation
 
-- **`api`** contains only public, platform-independent interfaces, DTOs, enums, and contracts. It has no Paper, Bukkit, Velocity, MariaDB, or Redis implementation dependencies.
-- **`core`** contains shared implementations and central services. It owns the common database and Redis abstractions and central player, server, and service infrastructure. Platform-specific code does not belong here.
+- **`api`** contains only public, platform-independent interfaces, DTOs, enums, and contracts. It has no Paper, Bukkit, Velocity, MariaDB, or Redis implementation dependencies. Its server package defines `ServerIdentity`, `ServerType`, `ServerEnvironment`, and `NetworkServer`.
+- **`core`** contains shared implementations and central services. It owns configuration loading, the MariaDB pool and migration runner, the Redis client, the configured `NetworkServer` implementation, and startup/shutdown lifecycle. Platform-specific code does not belong here.
 
 ### Platform integrations
 
@@ -77,4 +77,4 @@ services/web-api -> (no project dependency declared yet)
 
 `modules/discord` is a standalone process while retaining the feature-module dependency direction (`api` and `core`). `services/web-api` has no project dependency configured at this stage, keeping its future service calls separate from direct database access.
 
-These directions are acyclic: foundation contracts sit at the bottom, shared implementation depends on those contracts, and integrations/features depend on the foundation. No database or Redis connections, Discord bot, Web API endpoints, or Minecraft features are implemented in the current structure.
+These directions are acyclic: foundation contracts sit at the bottom, shared implementation depends on those contracts, and integrations/features depend on the foundation. Database and Redis connections are implemented only in `core`; feature modules do not own their own pools or clients. No Discord bot, Web API endpoints, or Minecraft features are implemented in the current structure.
