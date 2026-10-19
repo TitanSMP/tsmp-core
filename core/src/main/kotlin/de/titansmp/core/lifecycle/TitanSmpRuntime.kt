@@ -1,6 +1,7 @@
 package de.titansmp.core.lifecycle
 
 import de.titansmp.api.server.NetworkServer
+import de.titansmp.api.player.PlayerService
 import de.titansmp.core.config.DatabaseConfig
 import de.titansmp.core.config.RedisConfig
 import de.titansmp.core.config.TitanSmpConfig
@@ -10,6 +11,8 @@ import de.titansmp.core.database.DatabaseService
 import de.titansmp.core.database.HikariDatabaseService
 import de.titansmp.core.redis.LettuceRedisService
 import de.titansmp.core.redis.RedisService
+import de.titansmp.core.player.DefaultPlayerService
+import de.titansmp.core.player.JdbcPlayerRepository
 import de.titansmp.core.server.ConfiguredNetworkServer
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -35,6 +38,12 @@ class TitanSmpRuntime(
     private var databaseService: DatabaseService? = null
     private var redisService: RedisService? = null
     private var networkServer: NetworkServer? = null
+
+    /** Stateless facade over the same shared database pool used by every core repository. */
+    fun playerService(): PlayerService {
+        check(state == RuntimeState.READY) { "TitanSMP runtime must be ready before using player services" }
+        return DefaultPlayerService(JdbcPlayerRepository(requireNotNull(databaseService).dataSource))
+    }
 
     @Synchronized
     fun start(): NetworkServer {

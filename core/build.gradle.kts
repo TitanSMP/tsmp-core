@@ -13,6 +13,8 @@ dependencies {
     implementation("org.slf4j:slf4j-api:2.0.17")
 
     testImplementation(kotlin("test-junit5"))
+    testImplementation("org.testcontainers:testcontainers-mariadb:2.0.5")
+    testImplementation("org.testcontainers:testcontainers-junit-jupiter:2.0.5")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.14.2")
 }
 

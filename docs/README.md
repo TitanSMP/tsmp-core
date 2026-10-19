@@ -7,8 +7,9 @@ This directory contains architecture and infrastructure documentation for the Ti
 See [architecture.md](architecture.md) for the current module layout, module responsibilities, and allowed dependency directions.
 
 See [infrastructure.md](infrastructure.md) for configuration, MariaDB, Flyway migrations, Redis, server identity, lifecycle, and operations guidance.
+See [player-identity.md](player-identity.md) for UUID-based player identity, persistence, platform lifecycle, and concurrency constraints.
 
-The repository is organized into platform-independent contracts (`api`), shared infrastructure (`core`), platform integrations (`paper` and `velocity`), feature modules under `modules/`, and standalone services under `services/`. Shared infrastructure is implemented in `core`; feature implementations are intentionally not included.
+The repository is organized into platform-independent contracts (`api`), shared infrastructure (`core`), platform integrations (`paper` and `velocity`), feature modules under `modules/`, and standalone services under `services/`. The first shared domain capability is player identity: its contract is in `api`, persistence and service logic are in `core`, and Paper currently forwards lifecycle updates. Velocity writes are deferred until proxy/backend ownership can be coordinated safely. Other feature implementations are intentionally not included.
 
 ## Module inventory
 

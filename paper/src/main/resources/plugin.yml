@@ -1,0 +1,12 @@
+name: TitanSMP
+version: '${project.version}'
+main: de.titansmp.paper.TitanSmpPaperPlugin
+api-version: '26.3'
+description: TitanSMP network platform integration
+libraries:
+  - org.jetbrains.kotlin:kotlin-stdlib:2.4.21
+  - com.zaxxer:HikariCP:7.1.0
+  - org.mariadb.jdbc:mariadb-java-client:3.5.10
+  - org.flywaydb:flyway-core:13.10.2
+  - org.flywaydb:flyway-mysql:13.10.2
+  - io.lettuce:lettuce-core:7.8.0.RELEASE

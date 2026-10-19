@@ -1,6 +1,6 @@
 # Module Architecture
 
-TitanSMP is a Gradle multi-module monorepo. This document defines the responsibilities and permitted project dependencies for the current structure. The core now contains shared configuration, database, migration, Redis, server identity, and lifecycle infrastructure; feature implementations are still out of scope.
+TitanSMP is a Gradle multi-module monorepo. This document defines the responsibilities and permitted project dependencies for the current structure. The core contains shared configuration, database, migration, Redis, server identity, lifecycle, and player identity infrastructure.
 
 ## Layout
 
@@ -33,13 +33,14 @@ Kotlin sources use the `de.titansmp` package root. Each module has a correspondi
 
 - **`api`** contains only public, platform-independent interfaces, DTOs, enums, and contracts. It has no Paper, Bukkit, Velocity, MariaDB, or Redis implementation dependencies. Its server package defines `ServerIdentity`, `ServerType`, `ServerEnvironment`, and `NetworkServer`.
 - **`core`** contains shared implementations and central services. It owns configuration loading, the MariaDB pool and migration runner, the Redis client, the configured `NetworkServer` implementation, and startup/shutdown lifecycle. Platform-specific code does not belong here.
+- **Player identity**: the public DTO and service contract live in `api`; the service and JDBC repository live in `core` and use the shared MariaDB pool.
 
 ### Platform integrations
 
 - **`paper`** contains Paper-specific implementation and integration code. It may depend on `api` and `core`; the Paper API is confined to this module.
 - **`velocity`** contains Velocity-specific implementation and integration code. It may depend on `api` and `core`; the Velocity API is confined to this module.
 
-Platform wiring belongs in these modules. Feature modules remain separate from Paper and Velocity APIs.
+Platform wiring belongs in these modules. Paper forwards join and quit events asynchronously to the shared player service. Velocity presence writes are deferred until a proxy/backend ownership protocol can prevent stale and duplicate state changes. Feature modules remain separate from Paper and Velocity APIs.
 
 ### Feature modules
 
@@ -77,4 +78,4 @@ services/web-api -> (no project dependency declared yet)
 
 `modules/discord` is a standalone process while retaining the feature-module dependency direction (`api` and `core`). `services/web-api` has no project dependency configured at this stage, keeping its future service calls separate from direct database access.
 
-These directions are acyclic: foundation contracts sit at the bottom, shared implementation depends on those contracts, and integrations/features depend on the foundation. Database and Redis connections are implemented only in `core`; feature modules do not own their own pools or clients. No Discord bot, Web API endpoints, or Minecraft features are implemented in the current structure.
+These directions are acyclic: foundation contracts sit at the bottom, shared implementation depends on those contracts, and integrations/features depend on the foundation. Database and Redis connections are implemented only in `core`; feature modules do not own their own pools or clients. No Discord bot, Web API endpoints, or other Minecraft features are implemented in the current structure. See [player-identity.md](player-identity.md) for identity and concurrency details.
