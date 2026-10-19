@@ -40,6 +40,7 @@ import org.bukkit.event.player.PlayerMoveEvent
 import org.bukkit.event.player.PlayerAttemptPickupItemEvent
 import org.bukkit.event.player.PlayerSwapHandItemsEvent
 import org.bukkit.inventory.ItemStack
+import org.bukkit.inventory.meta.MapMeta
 import org.bukkit.NamespacedKey
 import org.bukkit.Registry
 import org.bukkit.potion.PotionEffect
@@ -483,9 +484,11 @@ class PlayerDataPaperModule(
             }
             player.addPotionEffect(data.toPaperEffect(state.capturedAt, now) ?: return@forEach)
         }
-        player.inventory.storageContents = state.inventory.map(::decode).toTypedArray()
-        player.inventory.armorContents = arrayOf(decode(state.armor[3]), decode(state.armor[2]), decode(state.armor[1]), decode(state.armor[0]))
-        player.inventory.setItemInOffHand(decode(state.offhand))
+        val warnedMissingMaps = mutableSetOf<Int>()
+        val decodeInventoryItem: (SerializedPlayerItem?) -> ItemStack? = { item -> decode(item, player.uniqueId, warnedMissingMaps) }
+        player.inventory.storageContents = state.inventory.map(decodeInventoryItem).toTypedArray()
+        player.inventory.armorContents = arrayOf(decodeInventoryItem(state.armor[3]), decodeInventoryItem(state.armor[2]), decodeInventoryItem(state.armor[1]), decodeInventoryItem(state.armor[0]))
+        player.inventory.setItemInOffHand(decodeInventoryItem(state.offhand))
         player.foodLevel = state.foodLevel
         player.totalExperience = state.totalExperience
         player.level = state.level
@@ -511,7 +514,13 @@ class PlayerDataPaperModule(
     private fun encode(item: ItemStack?): SerializedPlayerItem? =
         PaperItemStackCodec.encode(item)?.let(::SerializedPlayerItem)
 
-    private fun decode(item: SerializedPlayerItem?): ItemStack? = PaperItemStackCodec.decode(item?.payload)
+    private fun decode(item: SerializedPlayerItem?, playerId: UUID, warnedMissingMaps: MutableSet<Int>): ItemStack? =
+        PaperItemStackCodec.decode(item?.payload)?.also { restored ->
+            val mapMeta = restored.itemMeta as? MapMeta ?: return@also
+            if (mapMeta.hasMapId() && mapMeta.mapView == null && warnedMissingMaps.add(mapMeta.mapId)) {
+                logger.warning("Player $playerId has map item referring to unavailable server map ID ${mapMeta.mapId}; keeping the original item reference")
+            }
+        }
 
     private fun applyAdvancements(player: Player, saved: List<AdvancementProgressData>) {
         val savedByKey = saved.associateBy { it.advancementKey }

@@ -2,7 +2,7 @@
 
 ## Scope
 
-Phases 1 and 1.5 provide UUID-keyed player snapshots and coordinated server transfer. Phase 2 adds active Potion Effects and Phase 3 adds Advancement criterion progress to that same snapshot. The EnderChest remains wholly owned by `modules/ender-chest` and is not represented in the player-state API or table.
+Phases 1 and 1.5 provide UUID-keyed player snapshots and coordinated server transfer. Phase 2 adds active Potion Effects and Phase 3 adds Advancement criterion progress to that same snapshot. Map item stacks use the existing inventory item codec, but map assets are not part of player state; see [Map Synchronization Analysis](map-sync.md). The EnderChest remains wholly owned by `modules/ender-chest` and is not represented in the player-state API or table.
 
 The implementation is native TitanSMP code based on the source audit in [data-bridge-audit.md](data-bridge-audit.md). It does not use the archive as a runtime dependency and does not copy code from it.
 
@@ -81,6 +81,10 @@ If the source save succeeds but the target cannot be reached, Velocity denies/fa
 The in-memory protocol prevents duplicate/replayed event IDs within a process lifetime and checks all transfer identity fields. It is not a cross-proxy distributed lock. A multi-proxy deployment would need a stronger shared claim/lease before enabling competing coordinators; that coordination is intentionally not introduced in this phase.
 
 Other known limitations: no periodic checkpoints; no state migration from vanilla player files; Paper serialization compatibility follows the Paper/Minecraft version that reads the bytes; event delivery is best-effort; failed quit persistence deliberately leaves online presence until recovery/manual reconciliation; concurrent or stale snapshots are rejected rather than merged.
+
+## Maps (Phase 4)
+
+Inventory serialization continues to preserve Paper-supported map item bytes and references through the shared `PaperItemStackCodec`; no second map item serializer or PlayerState map field was added. A filled-map reference points to server-managed shared map state, and Paper's integer map ID is not defined as a network-wide identity. Paper 26.3 exposes MapView metadata but no supported complete export/import API for vanilla pixel content and renderer-layer state. Custom renderer instances are plugin runtime objects and are not replicated. Consequently, item persistence must not be interpreted as cross-backend map asset synchronization: for independent map registries, TitanSMP cannot currently guarantee that a transferred filled map resolves to the same image. There is no map asset table, map-specific transfer service, or payload version bump. The API findings and future asset boundary are documented in [map-sync.md](map-sync.md).
 
 ## Potion Effects (Phase 2)
 
