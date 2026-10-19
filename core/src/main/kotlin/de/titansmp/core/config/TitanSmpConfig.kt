@@ -11,6 +11,7 @@ class TitanSmpConfig(
     val database: DatabaseConfig,
     val redis: RedisConfig,
     val playerTransferTimeoutMs: Long = 5_000,
+    val chat: ChatConfig = ChatConfig(),
 ) {
     init {
         require(networkName.isNotBlank()) { "Network name must not be blank" }
@@ -19,7 +20,20 @@ class TitanSmpConfig(
     }
 
     override fun toString(): String =
-        "TitanSmpConfig(serverIdentity=$serverIdentity, networkName=$networkName, database=<redacted>, redis=<redacted>, playerTransferTimeoutMs=$playerTransferTimeoutMs)"
+        "TitanSmpConfig(serverIdentity=$serverIdentity, networkName=$networkName, database=<redacted>, redis=<redacted>, playerTransferTimeoutMs=$playerTransferTimeoutMs, chat=$chat)"
+}
+
+data class ChatConfig(
+    val rateLimitEnabled: Boolean = true,
+    val messagesPerWindow: Int = 5,
+    val windowMs: Long = 3_000,
+    val maxMessageLength: Int = 256,
+) {
+    init {
+        require(messagesPerWindow > 0) { "Chat messages-per-window must be positive" }
+        require(windowMs > 0) { "Chat rate-limit window must be positive" }
+        require(maxMessageLength > 0) { "Chat maximum message length must be positive" }
+    }
 }
 
 class DatabaseConfig(

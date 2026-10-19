@@ -87,8 +87,21 @@ class TitanSmpConfigLoader {
                 password = redisPassword?.takeIf(String::isNotBlank),
             ),
             playerTransferTimeoutMs = integer("data-bridge.transfer.timeout-ms", "TITANSMP_TRANSFER_TIMEOUT_MS", 5_000).toLong(),
+            chat = ChatConfig(
+                rateLimitEnabled = value("chat.rate-limit.enabled", "TITANSMP_CHAT_RATE_LIMIT_ENABLED", "true").toBooleanStrictOrConfigError("chat.rate-limit.enabled"),
+                messagesPerWindow = integer("chat.rate-limit.messages-per-window", "TITANSMP_CHAT_MESSAGES_PER_WINDOW", 5),
+                windowMs = value("chat.rate-limit.window-ms", "TITANSMP_CHAT_WINDOW_MS", "3000").toLongOrNull()
+                    ?: throw ConfigurationException("Invalid integer for 'chat.rate-limit.window-ms'"),
+                maxMessageLength = integer("chat.max-message-length", "TITANSMP_CHAT_MAX_MESSAGE_LENGTH", 256),
+            ),
         )
     }
+}
+
+private fun String.toBooleanStrictOrConfigError(key: String): Boolean = try {
+    toBooleanStrict()
+} catch (failure: IllegalArgumentException) {
+    throw ConfigurationException("Invalid boolean for '$key'", failure)
 }
 
 data class RedisEventConfiguration(

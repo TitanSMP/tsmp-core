@@ -17,6 +17,9 @@ import de.titansmp.api.moderation.PlayerUnbanned
 import de.titansmp.api.moderation.PlayerMuted
 import de.titansmp.api.moderation.PlayerUnmuted
 import de.titansmp.api.moderation.PlayerKicked
+import de.titansmp.api.chat.ChatMessage
+import de.titansmp.api.chat.ChatMessageSource
+import de.titansmp.api.chat.NetworkChatMessage
 import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
@@ -101,5 +104,15 @@ class NetworkEventSerializerTest {
     @Test
     fun `unknown schema version is rejected`() {
         assertFailsWith<IllegalArgumentException> { serializer.deserialize("""{"schemaVersion":99}""") }
+    }
+
+    @Test fun `chat message sources and nullable sender round trip`() {
+        val chatEvents = ChatMessageSource.entries.mapIndexed { index, source ->
+            val message = ChatMessage(UUID.randomUUID(), if (source == ChatMessageSource.SYSTEM) null else UUID.randomUUID(), "Sender-$index", "Hello $source", "smp-01", metadata.timestamp.plusSeconds(index.toLong()), source)
+            NetworkChatMessage(metadata.copy(eventType = NetworkChatMessage.TYPE), message)
+        }
+        chatEvents.forEach { event ->
+            assertEquals(event, serializer.deserialize(serializer.serialize(EventEnvelope(event))).event)
+        }
     }
 }

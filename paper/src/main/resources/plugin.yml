@@ -49,6 +49,18 @@ permissions:
   titansmp.moderation.immunity:
     description: Prevents moderation punishments against this player
     default: false
+  titansmp.chat.use:
+    description: Allows using network chat
+    default: true
+  titansmp.chat.color:
+    description: Reserved for future network chat color formatting
+    default: false
+  titansmp.chat.format:
+    description: Reserved for future network chat formatting
+    default: false
+  titansmp.chat.global:
+    description: Reserved for future network chat modes
+    default: false
 libraries:
   - org.jetbrains.kotlin:kotlin-stdlib:2.4.21
   - com.zaxxer:HikariCP:7.1.0

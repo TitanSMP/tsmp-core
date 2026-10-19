@@ -11,6 +11,8 @@ import de.titansmp.core.moderation.DefaultModerationService
 import de.titansmp.core.moderation.JdbcModerationRepository
 import de.titansmp.core.moderation.LuckPermsModerationPermissionService
 import de.titansmp.paper.moderation.ModerationPaperModule
+import de.titansmp.chat.DefaultChatService
+import de.titansmp.paper.chat.ChatPaperModule
 import net.luckperms.api.LuckPerms
 import net.luckperms.api.util.Tristate
 import org.bukkit.entity.Player
@@ -26,6 +28,7 @@ class TitanSmpPaperPlugin : JavaPlugin() {
     @Volatile private var enderChestModule: EnderChestPaperModule? = null
     @Volatile private var playerDataModule: PlayerDataPaperModule? = null
     @Volatile private var moderationModule: ModerationPaperModule? = null
+    @Volatile private var chatModule: ChatPaperModule? = null
     @Volatile private var moderationPersistence: java.util.concurrent.ExecutorService? = null
     private val runtimeReady = CompletableFuture<PaperPlayerIdentityRuntime>()
     private val lifecycle = Executors.newSingleThreadExecutor { task ->
@@ -85,15 +88,29 @@ class TitanSmpPaperPlugin : JavaPlugin() {
                             Thread(task, "titansmp-moderation-db").apply { isDaemon = true }
                         }
                         moderationPersistence = moderationExecutor
+                        val moderationService = DefaultModerationService(
+                            JdbcModerationRepository(startedRuntime.databaseDataSource()),
+                            LuckPermsModerationPermissionService(luckPerms),
+                            startedRuntime.eventBus(),
+                            moderationExecutor,
+                        )
                         moderationModule = ModerationPaperModule(
                             this,
-                            DefaultModerationService(
-                                JdbcModerationRepository(startedRuntime.databaseDataSource()),
-                                LuckPermsModerationPermissionService(luckPerms),
-                                startedRuntime.eventBus(),
-                                moderationExecutor,
-                            ),
+                            moderationService,
                             startedRuntime.playerService(),
+                            startedRuntime.eventBus(),
+                            serverIdentity.identity.id,
+                            moderationExecutor,
+                        ).also { it.register() }
+                        chatModule = ChatPaperModule(
+                            this,
+                            DefaultChatService(
+                                startedRuntime.eventBus(),
+                                // Reuse the central moderation service's source-of-truth mute query.
+                                moderationService,
+                                LuckPermsModerationPermissionService(luckPerms),
+                                startedRuntime.chatConfig,
+                            ),
                             startedRuntime.eventBus(),
                             serverIdentity.identity.id,
                             moderationExecutor,
@@ -149,6 +166,8 @@ class TitanSmpPaperPlugin : JavaPlugin() {
         val playerDataFlush = playerData?.flushAndClose()?.toCompletableFuture() ?: CompletableFuture.completedFuture(Unit)
         moderationModule?.close()
         moderationModule = null
+        chatModule?.close()
+        chatModule = null
         val moderationWorker = moderationPersistence
         moderationPersistence = null
         moderationWorker?.shutdown()

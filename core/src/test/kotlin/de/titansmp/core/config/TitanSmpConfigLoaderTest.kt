@@ -36,10 +36,32 @@ class TitanSmpConfigLoaderTest {
         assertEquals("titansmp", configuration.networkId)
         assertEquals("database-secret", configuration.database.password)
         assertEquals("redis-secret", configuration.redis.password)
+        assertTrue(configuration.chat.rateLimitEnabled)
+        assertEquals(5, configuration.chat.messagesPerWindow)
+        assertEquals(3_000L, configuration.chat.windowMs)
+        assertEquals(256, configuration.chat.maxMessageLength)
         assertFalse(configuration.toString().contains("database-secret"))
         assertFalse(configuration.toString().contains("redis-secret"))
         assertFalse(configuration.database.toString().contains("database-secret"))
         assertFalse(configuration.redis.toString().contains("redis-secret"))
+    }
+
+    @Test fun `loads chat throttling and length settings`() {
+        val file = writeConfig()
+        Files.writeString(file, Files.readString(file) + "\nchat.rate-limit.enabled=false\nchat.rate-limit.messages-per-window=8\nchat.rate-limit.window-ms=4500\nchat.max-message-length=180\n")
+
+        val chat = TitanSmpConfigLoader().load(file, emptyMap()).chat
+
+        assertFalse(chat.rateLimitEnabled)
+        assertEquals(8, chat.messagesPerWindow)
+        assertEquals(4_500L, chat.windowMs)
+        assertEquals(180, chat.maxMessageLength)
+    }
+
+    @Test fun `rejects invalid chat configuration`() {
+        val file = writeConfig()
+        Files.writeString(file, Files.readString(file) + "\nchat.rate-limit.enabled=maybe\n")
+        assertFailsWith<ConfigurationException> { TitanSmpConfigLoader().load(file, emptyMap()) }
     }
 
     @Test

@@ -23,6 +23,9 @@ import de.titansmp.api.moderation.PlayerUnbanned
 import de.titansmp.api.moderation.PlayerMuted
 import de.titansmp.api.moderation.PlayerUnmuted
 import de.titansmp.api.moderation.PlayerKicked
+import de.titansmp.api.chat.ChatMessage
+import de.titansmp.api.chat.ChatMessageSource
+import de.titansmp.api.chat.NetworkChatMessage
 import java.time.Instant
 import java.util.UUID
 
@@ -65,6 +68,10 @@ class NetworkEventSerializer(
             PlayerMuted.TYPE -> PlayerMuted(metadata, payload.uuid("targetId"), payload.text("targetName"), payload.uuid("actionId"), payload.nullableUuid("actorId"), payload.text("actorName"), payload.text("reason"), payload.instant("createdAt"), payload.nullableInstant("expiresAt"), payload.text("serverId"))
             PlayerUnmuted.TYPE -> PlayerUnmuted(metadata, payload.uuid("targetId"), payload.text("targetName"), payload.uuid("actionId"), payload.nullableUuid("actorId"), payload.text("actorName"), payload.nullableText("reason"), payload.instant("createdAt"), payload.text("serverId"))
             PlayerKicked.TYPE -> PlayerKicked(metadata, payload.uuid("targetId"), payload.text("targetName"), payload.uuid("actionId"), payload.nullableUuid("actorId"), payload.text("actorName"), payload.text("reason"), payload.instant("createdAt"), payload.text("serverId"))
+            NetworkChatMessage.TYPE -> NetworkChatMessage(metadata, ChatMessage(
+                payload.uuid("messageId"), payload.nullableUuid("senderUuid"), payload.text("senderName"), payload.text("message"),
+                payload.text("serverId"), payload.instant("timestamp"), ChatMessageSource.valueOf(payload.text("source")),
+            ))
             PlayerStateUpdated.TYPE -> PlayerStateUpdated(metadata, payload.uuid("playerUuid"), payload.path("revision").longValue())
             PlayerTransferPrepare.TYPE -> PlayerTransferPrepare(metadata, payload.uuid("transferId"), payload.uuid("playerUuid"), payload.text("sourceServerId"), payload.text("targetServerId"), payload.instant("timestamp"))
             PlayerTransferReady.TYPE -> PlayerTransferReady(metadata, payload.uuid("transferId"), payload.uuid("playerUuid"), payload.text("sourceServerId"), payload.text("targetServerId"), payload.path("stateRevision").longValue(), payload.instant("timestamp"))
@@ -98,6 +105,13 @@ class NetworkEventSerializer(
             is PlayerMuted -> node.putModeration(event.targetId, event.targetName, event.actionId, event.actorId, event.actorName, event.reason, event.createdAt, event.expiresAt, event.serverId)
             is PlayerUnmuted -> node.putModeration(event.targetId, event.targetName, event.actionId, event.actorId, event.actorName, event.reason, event.createdAt, null, event.serverId)
             is PlayerKicked -> node.putModeration(event.targetId, event.targetName, event.actionId, event.actorId, event.actorName, event.reason, event.createdAt, null, event.serverId)
+            is NetworkChatMessage -> {
+                val message = event.message
+                node.put("messageId", message.messageId.toString())
+                if (message.senderUuid == null) node.putNull("senderUuid") else node.put("senderUuid", message.senderUuid.toString())
+                node.put("senderName", message.senderName); node.put("message", message.message); node.put("serverId", message.serverId)
+                node.put("timestamp", message.timestamp.toString()); node.put("source", message.source.name)
+            }
             is PlayerStateUpdated -> {
                 node.put("playerUuid", event.playerUuid.toString())
                 node.put("revision", event.revision)
