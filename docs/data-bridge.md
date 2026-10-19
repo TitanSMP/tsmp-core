@@ -12,7 +12,7 @@ The implementation is native TitanSMP code based on the source audit in [data-br
 - `modules/data-bridge` contains the asynchronous service facade, JDBC repository, binary payload codec, and a small monotonic revision tracker. It receives the existing shared database pool from `core` and creates no pool or Redis client.
 - `core` owns the Flyway migration and existing database/event infrastructure.
 - `paper` snapshots/applies live player values on the Paper thread and owns join gating, quit/shutdown lifecycle, and Paper ItemStack serialization.
-- `velocity` does not yet coordinate state transfer.
+- `velocity` coordinates backend transfers through the Redis event bus. Its process starts Redis only; it does not connect to MariaDB or run migrations.
 
 The Data Bridge implementation lives in one Gradle feature project, with Paper integration in the existing root `paper` project. This matches the working EnderChest integration pattern and avoids a nested Paper subproject dependency cycle.
 
@@ -49,7 +49,7 @@ For a first save, a conditional `INSERT ... SELECT` requires the online UUID to 
 
 1. The existing identity listener creates/updates UUID identity and claims online presence on this server.
 2. Only after that succeeds does it ask the Data Bridge to load the persisted state asynchronously.
-3. While loading, Paper blocks movement, inventory, item interactions, pickup/drop, swaps, and damage to prevent use of a local stale snapshot.
+3. While loading or preparing a transfer, Paper blocks movement, inventory, item interactions, pickup/drop, swaps, damage, health regeneration, food changes, experience gain, and item consumption to prevent use of a stale snapshot.
 4. The main thread applies the state. An absent row means a first-time player; current Paper vanilla defaults become the initial baseline. Load/decode/apply failure is logged and the player is kicked so they cannot continue with stale local state.
 5. On quit, Paper snapshots once. If a saved baseline is unchanged, there is no DB write; a new row is still created for a first-time player. On successful persistence the identity listener marks presence offline and publishes the existing disconnect event. A failed save is logged and presence remains online, rather than asserting a successful disconnect.
 6. On normal plugin shutdown, all online snapshots are captured on the main thread, saves are drained, then shared infrastructure closes. A failed shutdown save is logged.
@@ -64,9 +64,19 @@ Consumers that project these notifications must track the highest revision per U
 
 An old backend save is accepted only while `players.online = TRUE` and `current_server` still matches that backend. Thus a backend that has lost current presence cannot write after the destination claims presence. A concurrent save with the same revision also loses through the conditional update. Conflicts and ownership errors are logged; they are not silently retried with stale contents.
 
-## Server transfers and limits
+## Server transfers (Phase 1.5)
 
-No Velocity transfer event or source/destination handoff is implemented. Current saves occur at quit and shutdown. The presence ownership check blocks late source writes after a destination has claimed the player, but without a proxy-coordinated save-before-connect or destination wait/retry, a fast transfer can load the last committed state before the source quit save completes. No implementation can recover uncommitted source memory after a crash. Before relying on seamless inventory transfer, add a transfer protocol that freezes the source, commits the state with its revision, then permits destination load; durable session/fencing ownership should guard that protocol. Redis may wake or notify participants but must not authorize a state transition.
+Velocity intercepts server-to-server `ServerPreConnectEvent`s. Initial joins and same-server connections use the normal Paper load path. For backend transfers, Velocity publishes a unique `PlayerTransferPrepare` event before it allows the connection. Every Paper server observes the intent; the target caches it and acknowledges with `PlayerTransferTargetPrepared`. The source locks the player, snapshots the existing Phase 1 fields on the Paper thread, and saves through the same MariaDB revision-CAS service. Only a committed save can produce `PlayerTransferReady`. Velocity waits for both the source's committed revision and the target's cached-intent acknowledgement before it permits the requested connection. Any source save failure, missing source session, publish failure, or preparation timeout denies the request and publishes `PlayerTransferFailed` so the source can release its lock.
+
+The target uses the same `loadState` path as a normal join. When it has a matching Prepare and Ready for the exact transfer ID, it loads from MariaDB and requires the loaded revision to be at least the source-confirmed revision before applying the snapshot. The player remains join-gated until apply completes. A stale, duplicate, or mismatched transfer event cannot authorize a different in-flight transfer. On successful apply, the target publishes `PlayerTransferCompleted`; Velocity then drops the in-memory transfer projection. Failed and completed events are notifications/protocol messages, not persistent records. No transfer table is created.
+
+The transfer events are `PlayerTransferPrepare`, `PlayerTransferTargetPrepared`, `PlayerTransferReady`, `PlayerTransferFailed`, and `PlayerTransferCompleted`. The timeout is configured with `data-bridge.transfer.timeout-ms` (default `5000`, accepted range `250..60000`) or `TITANSMP_TRANSFER_TIMEOUT_MS`. Backend IDs in Velocity's server list must match each Paper server's `server.id`, because they are carried in the transfer events. The proxy starts the Redis event runtime only and does not require database credentials. Redis is coordination only; MariaDB remains the player-state source of truth. Transfer state exists in memory for the short lifecycle and is not a distributed lock service.
+
+Presence remains one UUID row with one `current_server`. The target claims presence as part of the existing identity join path. A late source quit clears presence only if the source still owns that row, so it cannot erase target ownership. The source transfer snapshot is already committed before the target connection is permitted, and the source quit hook sees the new baseline revision and does not overwrite it with an older revision.
+
+If the source save succeeds but the target cannot be reached, Velocity denies/fails the attempted connection or the normal connection attempt fails while the persisted revision remains available. A subsequent normal join reads MariaDB. If the target joins but cannot load or apply the committed revision, it is kicked and reports failure; the committed state remains available for a later join. A crash before the transfer save commits leaves the previous committed revision intact; changes since the last successful save cannot be recovered. Redis Pub/Sub itself is best-effort, so loss of a coordination event fails closed by timeout rather than authorizing a transfer.
+
+The in-memory protocol prevents duplicate/replayed event IDs within a process lifetime and checks all transfer identity fields. It is not a cross-proxy distributed lock. A multi-proxy deployment would need a stronger shared claim/lease before enabling competing coordinators; that coordination is intentionally not introduced in this phase.
 
 Other known limitations: no periodic checkpoints; no state migration from vanilla player files; Paper serialization compatibility follows the Paper/Minecraft version that reads the bytes; event delivery is best-effort; failed quit persistence deliberately leaves online presence until recovery/manual reconciliation; concurrent or stale snapshots are rejected rather than merged.
 

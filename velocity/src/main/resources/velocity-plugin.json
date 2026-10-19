@@ -1,0 +1,6 @@
+{
+  "id": "titansmp-velocity",
+  "name": "TitanSMP",
+  "version": "${project.version}",
+  "main": "de.titansmp.velocity.TitanSmpVelocityPlugin"
+}

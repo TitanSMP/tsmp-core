@@ -10,14 +10,16 @@ class TitanSmpConfig(
     val networkId: String = networkName.lowercase().replace(Regex("[^a-z0-9._-]+"), "-").trim('-'),
     val database: DatabaseConfig,
     val redis: RedisConfig,
+    val playerTransferTimeoutMs: Long = 5_000,
 ) {
     init {
         require(networkName.isNotBlank()) { "Network name must not be blank" }
         require(networkId.matches(Regex("[a-z0-9][a-z0-9._-]{0,63}"))) { "Network ID must be a lowercase namespace identifier" }
+        require(playerTransferTimeoutMs in 250..60_000) { "Player transfer timeout must be between 250 and 60000 milliseconds" }
     }
 
     override fun toString(): String =
-        "TitanSmpConfig(serverIdentity=$serverIdentity, networkName=$networkName, database=<redacted>, redis=<redacted>)"
+        "TitanSmpConfig(serverIdentity=$serverIdentity, networkName=$networkName, database=<redacted>, redis=<redacted>, playerTransferTimeoutMs=$playerTransferTimeoutMs)"
 }
 
 class DatabaseConfig(

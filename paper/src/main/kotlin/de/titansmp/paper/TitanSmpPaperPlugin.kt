@@ -61,6 +61,7 @@ class TitanSmpPaperPlugin : JavaPlugin() {
                             serverIdentity.identity.id,
                             startedRuntime.eventBus(),
                             io = statePersistence,
+                            transferTimeoutMs = startedRuntime.playerTransferTimeoutMs,
                         ).also { it.register() }
                         identityListener?.onPlayerOnline = { uuid ->
                             Bukkit.getScheduler().runTask(this, Runnable {

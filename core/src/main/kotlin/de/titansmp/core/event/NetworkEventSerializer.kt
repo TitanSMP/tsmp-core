@@ -10,6 +10,11 @@ import de.titansmp.api.event.EventEnvelope
 import de.titansmp.api.event.EventMetadata
 import de.titansmp.api.event.EventType
 import de.titansmp.api.databridge.PlayerStateUpdated
+import de.titansmp.api.databridge.PlayerTransferPrepare
+import de.titansmp.api.databridge.PlayerTransferReady
+import de.titansmp.api.databridge.PlayerTransferFailed
+import de.titansmp.api.databridge.PlayerTransferCompleted
+import de.titansmp.api.databridge.PlayerTransferTargetPrepared
 import de.titansmp.api.player.event.PlayerConnected
 import de.titansmp.api.player.event.PlayerDisconnected
 import de.titansmp.api.player.event.PlayerServerChanged
@@ -51,6 +56,11 @@ class NetworkEventSerializer(
             PlayerDisconnected.TYPE -> PlayerDisconnected(metadata, payload.uuid("playerId"), payload.text("serverId"))
             PlayerServerChanged.TYPE -> PlayerServerChanged(metadata, payload.uuid("playerId"), payload.text("previousServerId"), payload.text("newServerId"))
             PlayerStateUpdated.TYPE -> PlayerStateUpdated(metadata, payload.uuid("playerUuid"), payload.path("revision").longValue())
+            PlayerTransferPrepare.TYPE -> PlayerTransferPrepare(metadata, payload.uuid("transferId"), payload.uuid("playerUuid"), payload.text("sourceServerId"), payload.text("targetServerId"), payload.instant("timestamp"))
+            PlayerTransferReady.TYPE -> PlayerTransferReady(metadata, payload.uuid("transferId"), payload.uuid("playerUuid"), payload.text("sourceServerId"), payload.text("targetServerId"), payload.path("stateRevision").longValue(), payload.instant("timestamp"))
+            PlayerTransferTargetPrepared.TYPE -> PlayerTransferTargetPrepared(metadata, payload.uuid("transferId"), payload.uuid("playerUuid"), payload.text("sourceServerId"), payload.text("targetServerId"), payload.instant("timestamp"))
+            PlayerTransferFailed.TYPE -> PlayerTransferFailed(metadata, payload.uuid("transferId"), payload.uuid("playerUuid"), payload.text("sourceServerId"), payload.text("targetServerId"), payload.text("reason"), payload.instant("timestamp"))
+            PlayerTransferCompleted.TYPE -> PlayerTransferCompleted(metadata, payload.uuid("transferId"), payload.uuid("playerUuid"), payload.text("sourceServerId"), payload.text("targetServerId"), payload.path("stateRevision").longValue(), payload.instant("timestamp"))
             else -> throw UnknownEventTypeException(type)
         }
         return EventEnvelope(event)
@@ -77,6 +87,29 @@ class NetworkEventSerializer(
                 node.put("playerUuid", event.playerUuid.toString())
                 node.put("revision", event.revision)
             }
+            is PlayerTransferPrepare -> {
+                node.put("transferId", event.transferId.toString()); node.put("playerUuid", event.playerUuid.toString())
+                node.put("sourceServerId", event.sourceServerId); node.put("targetServerId", event.targetServerId); node.put("timestamp", event.timestamp.toString())
+            }
+            is PlayerTransferReady -> {
+                node.put("transferId", event.transferId.toString()); node.put("playerUuid", event.playerUuid.toString())
+                node.put("sourceServerId", event.sourceServerId); node.put("targetServerId", event.targetServerId)
+                node.put("stateRevision", event.stateRevision); node.put("timestamp", event.timestamp.toString())
+            }
+            is PlayerTransferTargetPrepared -> {
+                node.put("transferId", event.transferId.toString()); node.put("playerUuid", event.playerUuid.toString())
+                node.put("sourceServerId", event.sourceServerId); node.put("targetServerId", event.targetServerId); node.put("timestamp", event.timestamp.toString())
+            }
+            is PlayerTransferFailed -> {
+                node.put("transferId", event.transferId.toString()); node.put("playerUuid", event.playerUuid.toString())
+                node.put("sourceServerId", event.sourceServerId); node.put("targetServerId", event.targetServerId)
+                node.put("reason", event.reason); node.put("timestamp", event.timestamp.toString())
+            }
+            is PlayerTransferCompleted -> {
+                node.put("transferId", event.transferId.toString()); node.put("playerUuid", event.playerUuid.toString())
+                node.put("sourceServerId", event.sourceServerId); node.put("targetServerId", event.targetServerId)
+                node.put("stateRevision", event.stateRevision); node.put("timestamp", event.timestamp.toString())
+            }
             else -> throw UnsupportedEventTypeException(event.metadata.eventType)
         }
         return node
@@ -89,6 +122,7 @@ class NetworkEventSerializer(
         ?: throw IllegalArgumentException("Event payload is missing '$field'")
 
     private fun JsonNode.uuid(field: String): UUID = UUID.fromString(text(field))
+    private fun JsonNode.instant(field: String): Instant = Instant.parse(text(field))
 
     companion object { const val SCHEMA_VERSION = 1 }
 }

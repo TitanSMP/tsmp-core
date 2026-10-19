@@ -7,6 +7,34 @@ import java.nio.charset.StandardCharsets
 import java.util.Properties
 
 class TitanSmpConfigLoader {
+    fun loadRedisEventConfiguration(
+        path: Path = Path.of("config", "titansmp.properties"),
+        environment: Map<String, String> = System.getenv(),
+    ): RedisEventConfiguration {
+        val properties = Properties()
+        if (Files.isRegularFile(path)) Files.newBufferedReader(path, StandardCharsets.UTF_8).use(properties::load)
+        fun configured(property: String, variable: String, default: String? = null): String =
+            environment[variable]?.takeIf(String::isNotBlank)?.trim()
+                ?: properties.getProperty(property)?.takeIf(String::isNotBlank)?.trim()
+                ?: default
+                ?: throw ConfigurationException("Missing required configuration '$property' (or '$variable')")
+        val networkName = configured("network.name", "TITANSMP_NETWORK_NAME", "TitanSMP")
+        val derivedNetworkId = networkName.lowercase().replace(Regex("[^a-z0-9._-]+"), "-").trim('-').ifBlank { "titansmp" }
+        val timeout = configured("data-bridge.transfer.timeout-ms", "TITANSMP_TRANSFER_TIMEOUT_MS", "5000").toLongOrNull()
+            ?: throw ConfigurationException("Invalid integer for 'data-bridge.transfer.timeout-ms'")
+        return RedisEventConfiguration(
+            serverId = configured("server.id", "TITANSMP_SERVER_ID", "velocity"),
+            networkId = configured("network.id", "TITANSMP_NETWORK_ID", derivedNetworkId),
+            redis = RedisConfig(
+                configured("redis.host", "TITANSMP_REDIS_HOST", "127.0.0.1"),
+                configured("redis.port", "TITANSMP_REDIS_PORT", "6379").toIntOrNull()
+                    ?: throw ConfigurationException("Invalid integer for 'redis.port'"),
+                (environment["TITANSMP_REDIS_PASSWORD"] ?: properties.getProperty("redis.password"))?.takeIf(String::isNotBlank),
+            ),
+            playerTransferTimeoutMs = timeout,
+        )
+    }
+
     fun load(
         path: Path = Path.of("config", "titansmp.properties"),
         environment: Map<String, String> = System.getenv(),
@@ -58,6 +86,20 @@ class TitanSmpConfigLoader {
                 port = integer("redis.port", "TITANSMP_REDIS_PORT", 6379),
                 password = redisPassword?.takeIf(String::isNotBlank),
             ),
+            playerTransferTimeoutMs = integer("data-bridge.transfer.timeout-ms", "TITANSMP_TRANSFER_TIMEOUT_MS", 5_000).toLong(),
         )
+    }
+}
+
+data class RedisEventConfiguration(
+    val serverId: String,
+    val networkId: String,
+    val redis: RedisConfig,
+    val playerTransferTimeoutMs: Long,
+) {
+    init {
+        require(serverId.isNotBlank())
+        require(networkId.matches(Regex("[a-z0-9][a-z0-9._-]{0,63}")))
+        require(playerTransferTimeoutMs in 250..60_000)
     }
 }

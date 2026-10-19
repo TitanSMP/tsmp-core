@@ -4,6 +4,11 @@ import de.titansmp.api.event.EventEnvelope
 import de.titansmp.api.event.EventMetadata
 import de.titansmp.api.event.EventType
 import de.titansmp.api.databridge.PlayerStateUpdated
+import de.titansmp.api.databridge.PlayerTransferPrepare
+import de.titansmp.api.databridge.PlayerTransferReady
+import de.titansmp.api.databridge.PlayerTransferFailed
+import de.titansmp.api.databridge.PlayerTransferCompleted
+import de.titansmp.api.databridge.PlayerTransferTargetPrepared
 import de.titansmp.api.player.event.PlayerConnected
 import de.titansmp.api.player.event.PlayerDisconnected
 import de.titansmp.api.player.event.PlayerServerChanged
@@ -50,6 +55,20 @@ class NetworkEventSerializerTest {
         val event = PlayerStateUpdated(metadata.copy(eventType = PlayerStateUpdated.TYPE), UUID.randomUUID(), 42)
         val decoded = serializer.deserialize(serializer.serialize(EventEnvelope(event))).event
         assertEquals(event, decoded)
+    }
+
+    @Test fun `transfer lifecycle events round trip without platform types`() {
+        val player = UUID.randomUUID()
+        val transferId = UUID.randomUUID()
+        val timestamp = Instant.parse("2026-10-19T12:00:00Z")
+        val events = listOf(
+            PlayerTransferPrepare(metadata.copy(eventType = PlayerTransferPrepare.TYPE), transferId, player, "smp-01", "smp-02", timestamp),
+            PlayerTransferReady(metadata.copy(eventType = PlayerTransferReady.TYPE), transferId, player, "smp-01", "smp-02", 42, timestamp),
+            PlayerTransferTargetPrepared(metadata.copy(eventType = PlayerTransferTargetPrepared.TYPE), transferId, player, "smp-01", "smp-02", timestamp),
+            PlayerTransferFailed(metadata.copy(eventType = PlayerTransferFailed.TYPE), transferId, player, "smp-01", "smp-02", "timeout", timestamp),
+            PlayerTransferCompleted(metadata.copy(eventType = PlayerTransferCompleted.TYPE), transferId, player, "smp-01", "smp-02", 43, timestamp),
+        )
+        events.forEach { assertEquals(it, serializer.deserialize(serializer.serialize(EventEnvelope(it))).event) }
     }
 
     @Test

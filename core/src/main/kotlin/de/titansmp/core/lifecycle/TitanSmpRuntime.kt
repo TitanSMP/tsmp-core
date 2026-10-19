@@ -46,6 +46,8 @@ class TitanSmpRuntime(
     private var redisService: RedisService? = null
     private var eventBusService: EventBus? = null
     private var networkServer: NetworkServer? = null
+    @Volatile var playerTransferTimeoutMs: Long = 5_000
+        private set
 
     /** Stateless facade over the same shared database pool used by every core repository. */
     fun playerService(): PlayerService {
@@ -72,6 +74,7 @@ class TitanSmpRuntime(
 
         try {
             val configuration = configLoader()
+            playerTransferTimeoutMs = configuration.playerTransferTimeoutMs
             val server = ConfiguredNetworkServer(configuration.serverIdentity, configuration.networkName)
             networkServer = server
             logger.info(

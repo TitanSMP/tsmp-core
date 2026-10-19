@@ -3,9 +3,15 @@ package de.titansmp.paper.databridge
 import de.titansmp.api.databridge.PlayerDataService
 import de.titansmp.api.databridge.PlayerState
 import de.titansmp.api.databridge.PlayerStateUpdated
+import de.titansmp.api.databridge.PlayerTransferPrepare
+import de.titansmp.api.databridge.PlayerTransferReady
+import de.titansmp.api.databridge.PlayerTransferCompleted
+import de.titansmp.api.databridge.PlayerTransferTargetPrepared
+import de.titansmp.api.databridge.PlayerTransferFailed
 import de.titansmp.api.databridge.SerializedPlayerItem
 import de.titansmp.api.event.EventBus
 import de.titansmp.api.event.EventEnvelope
+import de.titansmp.api.event.EventMetadata
 import de.titansmp.api.event.EventListener
 import de.titansmp.api.event.EventSubscription
 import de.titansmp.api.event.EventType
@@ -29,6 +35,7 @@ import org.junit.jupiter.api.Test
 import org.mockbukkit.mockbukkit.MockBukkit
 import org.mockbukkit.mockbukkit.ServerMock
 import java.util.UUID
+import java.time.Instant
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionStage
 
@@ -142,6 +149,53 @@ class PlayerDataPaperModuleTest {
         assertTrue(service.saves.single().offhand != null)
     }
 
+    @Test fun `transfer target accepts a later MariaDB revision and publishes completion`() {
+        val player = server.addPlayer()
+        val playerId = player.uniqueId
+        val transferId = UUID.randomUUID()
+        val now = Instant.now()
+        service.loaded = CompletableFuture.completedFuture(state(playerId).withRevision(43))
+        eventBus.emit(PlayerTransferPrepare(EventMetadata(eventType = PlayerTransferPrepare.TYPE, sourceServerId = "velocity"), transferId, playerId, "smp-02", "smp-01", now))
+        eventBus.emit(PlayerTransferReady(EventMetadata(eventType = PlayerTransferReady.TYPE, sourceServerId = "smp-02"), transferId, playerId, "smp-02", "smp-01", 42, now))
+        server.scheduler.performOneTick()
+
+        assertTrue(player.isOnline)
+        assertTrue(eventBus.events.any { it is PlayerTransferCompleted && it.stateRevision == 43L })
+        assertTrue(eventBus.events.any { it is PlayerTransferTargetPrepared && it.transferId == transferId })
+    }
+
+    @Test fun `transfer target rejects a state older than the ready revision`() {
+        val player = server.addPlayer()
+        val playerId = player.uniqueId
+        val transferId = UUID.randomUUID()
+        val now = Instant.now()
+        service.loaded = CompletableFuture.completedFuture(state(playerId).withRevision(41))
+        eventBus.emit(PlayerTransferPrepare(EventMetadata(eventType = PlayerTransferPrepare.TYPE, sourceServerId = "velocity"), transferId, playerId, "smp-02", "smp-01", now))
+        eventBus.emit(PlayerTransferReady(EventMetadata(eventType = PlayerTransferReady.TYPE, sourceServerId = "smp-02"), transferId, playerId, "smp-02", "smp-01", 42, now))
+        server.scheduler.performOneTick()
+
+        assertTrue(eventBus.events.any { it is PlayerTransferFailed && it.reason == "target-state-below-required-revision" })
+        assertTrue(eventBus.events.none { it is PlayerTransferCompleted })
+    }
+
+    @Test fun `source save failure publishes failure and does not publish ready`() {
+        val player = server.addPlayer()
+        service.loaded = CompletableFuture.completedFuture(state(player.uniqueId))
+        module.loadOnJoin(player)
+        server.scheduler.performOneTick()
+        player.foodLevel = 12
+        service.saveFailure = IllegalStateException("database unavailable")
+        val transferId = UUID.randomUUID()
+        val now = Instant.now()
+        eventBus.emit(PlayerTransferPrepare(EventMetadata(eventType = PlayerTransferPrepare.TYPE, sourceServerId = "velocity"), transferId, player.uniqueId, "smp-01", "smp-02", now))
+        server.scheduler.performOneTick()
+
+        assertTrue(player.isOnline)
+        assertEquals(12, player.foodLevel)
+        assertTrue(eventBus.events.any { it is PlayerTransferFailed && it.transferId == transferId })
+        assertTrue(eventBus.events.none { it is PlayerTransferReady && it.transferId == transferId })
+    }
+
     @Test fun `paper codec preserves complex item metadata including persistent data`() {
         val original = ItemStack(Material.DIAMOND_SWORD, 1)
         original.editMeta { meta ->
@@ -169,17 +223,24 @@ class PlayerDataPaperModuleTest {
         var loaded: CompletableFuture<PlayerState?> = CompletableFuture.completedFuture(null)
         val saves = mutableListOf<PlayerState>()
         var loads = 0
+        var saveFailure: Throwable? = null
         override fun load(playerUuid: UUID, serverId: String): CompletionStage<PlayerState?> { loads++; return loaded }
         override fun save(state: PlayerState, serverId: String): CompletionStage<PlayerState> {
             saves += state
+            saveFailure?.let { return CompletableFuture.failedFuture(it) }
             return CompletableFuture.completedFuture(state.withRevision(state.revision + 1))
         }
     }
 
     private class RecordingEventBus : EventBus {
         val events = mutableListOf<NetworkEvent>()
+        private val listeners = mutableMapOf<EventType, MutableList<EventListener>>()
         override fun publish(event: NetworkEvent): CompletionStage<Unit> { events += event; return CompletableFuture.completedFuture(Unit) }
-        override fun subscribe(eventType: EventType, listener: EventListener): EventSubscription = EventSubscription {}
+        override fun subscribe(eventType: EventType, listener: EventListener): EventSubscription {
+            listeners.getOrPut(eventType) { mutableListOf() } += listener
+            return EventSubscription { listeners[eventType]?.remove(listener) }
+        }
+        fun emit(event: NetworkEvent) { listeners[event.metadata.eventType]?.toList()?.forEach { it.onEvent(EventEnvelope(event)) } }
         override fun close() = Unit
     }
 }

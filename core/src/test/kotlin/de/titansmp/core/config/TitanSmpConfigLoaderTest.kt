@@ -50,6 +50,28 @@ class TitanSmpConfigLoaderTest {
     }
 
     @Test
+    fun `loads Redis-only event runtime without database credentials and reads transfer timeout`() {
+        val file = temporaryDirectory.resolve("proxy.properties")
+        Files.writeString(file, """
+            server.id=velocity-01
+            network.id=titansmp
+            redis.host=redis.internal
+            redis.port=6380
+            redis.password=secret
+            data-bridge.transfer.timeout-ms=7200
+        """.trimIndent())
+
+        val configuration = TitanSmpConfigLoader().loadRedisEventConfiguration(file, emptyMap())
+
+        assertEquals("velocity-01", configuration.serverId)
+        assertEquals("titansmp", configuration.networkId)
+        assertEquals("redis.internal", configuration.redis.host)
+        assertEquals(6380, configuration.redis.port)
+        assertEquals("secret", configuration.redis.password)
+        assertEquals(7_200L, configuration.playerTransferTimeoutMs)
+    }
+
+    @Test
     fun `can load production configuration entirely from environment variables`() {
         val missingFile = temporaryDirectory.resolve("production.properties")
 

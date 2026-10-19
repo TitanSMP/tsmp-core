@@ -9,11 +9,11 @@ See [architecture.md](architecture.md) for the current module layout, module res
 See [infrastructure.md](infrastructure.md) for configuration, MariaDB, Flyway migrations, Redis, server identity, lifecycle, and operations guidance.
 See [player-identity.md](player-identity.md) for UUID-based player identity, persistence, platform lifecycle, and concurrency constraints.
 See [event-bus.md](event-bus.md) for the Redis Pub/Sub event contract, lifecycle, and threading semantics.
-See [data-bridge.md](data-bridge.md) for the Phase 1 player-state model, Paper lifecycle, persistence, concurrency, and limits.
+See [data-bridge.md](data-bridge.md) for the Phase 1 player-state model and Phase 1.5 transfer protocol, Paper lifecycle, persistence, concurrency, and limits.
 See [data-bridge-audit.md](data-bridge-audit.md) for the source audit of the upstream `mc-data-bridge` archive and the proposed TitanSMP integration plan. The audit is documentation only; no upstream source or dependencies have been integrated.
 See [ender-chest.md](ender-chest.md) for the network-wide TitanSMP EnderChest architecture, persistence, access rules, and transfer consistency limits.
 
-The repository is organized into platform-independent contracts (`api`), shared infrastructure (`core`), platform integrations (`paper` and `velocity`), feature modules under `modules/`, and standalone services under `services/`. Player identity, the independent EnderChest, and Data Bridge Phase 1 are implemented. Other feature modules remain structural placeholders. The Data Bridge uses MariaDB as its durable source of truth; Redis notifications are advisory only. Proxy-controlled transfer coordination remains future work.
+The repository is organized into platform-independent contracts (`api`), shared infrastructure (`core`), platform integrations (`paper` and `velocity`), feature modules under `modules/`, and standalone services under `services/`. Player identity, the independent EnderChest, and Data Bridge Phases 1 and 1.5 are implemented. Other feature modules remain structural placeholders. The Data Bridge uses MariaDB as its durable source of truth; Redis carries ephemeral transfer coordination and advisory notifications.
 
 ## Module inventory
 

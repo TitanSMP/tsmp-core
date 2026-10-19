@@ -39,7 +39,7 @@ Kotlin sources use the `de.titansmp` package root. Each module has a correspondi
 ### Platform integrations
 
 - **`paper`** contains Paper-specific implementation and integration code. It may depend on `api` and `core`; the Paper API is confined to this module.
-- **`velocity`** contains Velocity-specific implementation and integration code. It may depend on `api` and `core`; the Velocity API is confined to this module.
+- **`velocity`** contains Velocity-specific implementation and integration code. It may depend on `api` and `core`; the Velocity API is confined to this module. Its transfer coordinator uses the Redis-only event runtime and does not start MariaDB migrations.
 
 Platform wiring belongs in these modules. Paper forwards join and quit events asynchronously to the shared player service. Velocity presence writes are deferred until a proxy/backend ownership protocol can prevent stale and duplicate state changes. Feature modules remain separate from Paper and Velocity APIs.
 
@@ -48,6 +48,7 @@ Platform wiring belongs in these modules. Paper forwards join and quit events as
 Each feature module encapsulates its own domain and uses shared infrastructure through `core`. Contracts required by other modules belong in `api`. Feature modules must not create parallel database or Redis systems.
 
 - **`modules/data-bridge`** contains the TitanSMP-native Phase 1 player-state model persistence service and JDBC repository. Its public contract is in root `api`. Paper snapshot/application, lifecycle wiring, and Paper-native item serialization are in root `paper` to reuse the existing platform boundary without creating nested Gradle task cycles. The source audit is design input only; no upstream code was copied.
+- The Data Bridge transfer contracts and Redis event payloads live in `api`; the in-memory transfer lifecycle projection lives in `core`; Paper snapshots, locks, loads, and applies in `paper`; Velocity gates backend pre-connects in `velocity`. MariaDB stores only player state, and Redis Pub/Sub coordinates the transient protocol.
 - **`modules/ender-chest`** owns the platform-independent TitanSMP EnderChest storage service and JDBC repository. Its public DTO/service contract lives in root `api`; Paper GUI, command, item serialization, and vanilla EnderChest interception live in `paper`. Both entry points use the same UUID-keyed MariaDB row and revision-checked saves. LuckPerms supplies permission checks; it does not define storage identity or persisted rank state.
 - **`modules/moderation`** owns moderation-related functionality.
 - **`modules/chat`** owns chat functionality.
@@ -73,7 +74,7 @@ core      -> api
 modules/ender-chest -> api, core
 modules/data-bridge -> api, core
 paper     -> api, core, modules/ender-chest, modules/data-bridge
-velocity  -> api, core
+velocity  -> api, core, modules/data-bridge
 modules/* -> api, core
 services/web-api -> (no project dependency declared yet)
 ```
