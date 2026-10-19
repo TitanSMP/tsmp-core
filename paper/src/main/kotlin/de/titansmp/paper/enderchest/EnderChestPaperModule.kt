@@ -28,6 +28,7 @@ import org.bukkit.inventory.ItemStack
 import org.bukkit.plugin.java.JavaPlugin
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
+import de.titansmp.paper.serialization.PaperItemStackCodec
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionStage
@@ -264,9 +265,9 @@ class EnderChestPaperModule(
         }
 
         private fun encode(item: ItemStack?): SerializedEnderChestItem? =
-            if (item == null || item.type.isAir) null else SerializedEnderChestItem(item.serializeAsBytes())
+            PaperItemStackCodec.encode(item)?.let(::SerializedEnderChestItem)
 
-        private fun decode(item: SerializedEnderChestItem?): ItemStack? = item?.let { ItemStack.deserializeBytes(it.payload) }
+        private fun decode(item: SerializedEnderChestItem?): ItemStack? = PaperItemStackCodec.decode(item?.payload)
 
         private fun lockedSlot(): ItemStack = ItemStack(Material.BARRIER).apply {
             itemMeta = itemMeta.apply {

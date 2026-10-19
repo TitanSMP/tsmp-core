@@ -9,6 +9,7 @@ import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import de.titansmp.api.event.EventEnvelope
 import de.titansmp.api.event.EventMetadata
 import de.titansmp.api.event.EventType
+import de.titansmp.api.databridge.PlayerStateUpdated
 import de.titansmp.api.player.event.PlayerConnected
 import de.titansmp.api.player.event.PlayerDisconnected
 import de.titansmp.api.player.event.PlayerServerChanged
@@ -49,6 +50,7 @@ class NetworkEventSerializer(
             PlayerConnected.TYPE -> PlayerConnected(metadata, payload.uuid("playerId"), payload.text("username"), payload.text("serverId"))
             PlayerDisconnected.TYPE -> PlayerDisconnected(metadata, payload.uuid("playerId"), payload.text("serverId"))
             PlayerServerChanged.TYPE -> PlayerServerChanged(metadata, payload.uuid("playerId"), payload.text("previousServerId"), payload.text("newServerId"))
+            PlayerStateUpdated.TYPE -> PlayerStateUpdated(metadata, payload.uuid("playerUuid"), payload.path("revision").longValue())
             else -> throw UnknownEventTypeException(type)
         }
         return EventEnvelope(event)
@@ -70,6 +72,10 @@ class NetworkEventSerializer(
                 node.put("playerId", event.playerId.toString())
                 node.put("previousServerId", event.previousServerId)
                 node.put("newServerId", event.newServerId)
+            }
+            is PlayerStateUpdated -> {
+                node.put("playerUuid", event.playerUuid.toString())
+                node.put("revision", event.revision)
             }
             else -> throw UnsupportedEventTypeException(event.metadata.eventType)
         }

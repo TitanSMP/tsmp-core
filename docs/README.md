@@ -9,10 +9,11 @@ See [architecture.md](architecture.md) for the current module layout, module res
 See [infrastructure.md](infrastructure.md) for configuration, MariaDB, Flyway migrations, Redis, server identity, lifecycle, and operations guidance.
 See [player-identity.md](player-identity.md) for UUID-based player identity, persistence, platform lifecycle, and concurrency constraints.
 See [event-bus.md](event-bus.md) for the Redis Pub/Sub event contract, lifecycle, and threading semantics.
+See [data-bridge.md](data-bridge.md) for the Phase 1 player-state model, Paper lifecycle, persistence, concurrency, and limits.
 See [data-bridge-audit.md](data-bridge-audit.md) for the source audit of the upstream `mc-data-bridge` archive and the proposed TitanSMP integration plan. The audit is documentation only; no upstream source or dependencies have been integrated.
 See [ender-chest.md](ender-chest.md) for the network-wide TitanSMP EnderChest architecture, persistence, access rules, and transfer consistency limits.
 
-The repository is organized into platform-independent contracts (`api`), shared infrastructure (`core`), platform integrations (`paper` and `velocity`), feature modules under `modules/`, and standalone services under `services/`. The first shared domain capability is player identity: its contract is in `api`, persistence and service logic are in `core`, and Paper currently forwards lifecycle updates. The TitanSMP EnderChest is the first implemented feature module; the remaining feature modules are structural placeholders. Velocity presence writes remain deferred until proxy/backend ownership can be coordinated safely.
+The repository is organized into platform-independent contracts (`api`), shared infrastructure (`core`), platform integrations (`paper` and `velocity`), feature modules under `modules/`, and standalone services under `services/`. Player identity, the independent EnderChest, and Data Bridge Phase 1 are implemented. Other feature modules remain structural placeholders. The Data Bridge uses MariaDB as its durable source of truth; Redis notifications are advisory only. Proxy-controlled transfer coordination remains future work.
 
 ## Module inventory
 
@@ -42,4 +43,4 @@ The repository is organized into platform-independent contracts (`api`), shared 
 
 - `services/web-api` — a standalone service for the existing Next.js website; the website must not access MariaDB directly
 
-The `data-bridge` module is reserved for a future TitanSMP adaptation based on `mc-data-bridge`. No upstream code has been copied or forked into this repository.
+The Data Bridge is a native TitanSMP implementation informed by the source audit. No upstream source has been copied or forked into this repository. Phase 1 synchronizes only Player State + Inventory/Armor/Offhand + Health/Food/Experience.

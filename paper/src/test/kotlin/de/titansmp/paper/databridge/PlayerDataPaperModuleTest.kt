@@ -1,0 +1,185 @@
+package de.titansmp.paper.databridge
+
+import de.titansmp.api.databridge.PlayerDataService
+import de.titansmp.api.databridge.PlayerState
+import de.titansmp.api.databridge.PlayerStateUpdated
+import de.titansmp.api.databridge.SerializedPlayerItem
+import de.titansmp.api.event.EventBus
+import de.titansmp.api.event.EventEnvelope
+import de.titansmp.api.event.EventListener
+import de.titansmp.api.event.EventSubscription
+import de.titansmp.api.event.EventType
+import de.titansmp.api.event.NetworkEvent
+import de.titansmp.paper.serialization.PaperItemStackCodec
+import net.kyori.adventure.text.Component
+import org.bukkit.Bukkit
+import org.bukkit.Material
+import org.bukkit.NamespacedKey
+import org.bukkit.enchantments.Enchantment
+import org.bukkit.inventory.ItemFlag
+import org.bukkit.inventory.ItemStack
+import org.bukkit.persistence.PersistentDataType
+import org.bukkit.plugin.java.JavaPlugin
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.mockbukkit.mockbukkit.MockBukkit
+import org.mockbukkit.mockbukkit.ServerMock
+import java.util.UUID
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CompletionStage
+
+class PlayerDataPaperModuleTest {
+    private lateinit var server: ServerMock
+    private lateinit var plugin: TestPlugin
+    private lateinit var service: FakePlayerDataService
+    private lateinit var eventBus: RecordingEventBus
+    private lateinit var module: PlayerDataPaperModule
+
+    @BeforeEach fun setUp() {
+        server = MockBukkit.mock()
+        plugin = MockBukkit.load(TestPlugin::class.java)
+        service = FakePlayerDataService()
+        eventBus = RecordingEventBus()
+        module = PlayerDataPaperModule(plugin, service, "smp-01", eventBus)
+        module.register()
+    }
+
+    @AfterEach fun tearDown() {
+        if (::module.isInitialized) module.flushAndClose().toCompletableFuture().join()
+        MockBukkit.unmock()
+    }
+
+    @Test fun `join applies persisted main armor offhand vitals and experience`() {
+        val player = server.addPlayer()
+        val state = PlayerState(
+            player.uniqueId,
+            List(36) { if (it == 8) encode(ItemStack(Material.DIAMOND, 4)) else null },
+            listOf(encode(ItemStack(Material.IRON_HELMET)), null, null, encode(ItemStack(Material.IRON_BOOTS))),
+            encode(ItemStack(Material.SHIELD)), 14.5, 16, .45f, 23, 781, 7,
+        )
+        service.loaded = CompletableFuture.completedFuture(state)
+        assertTrue(plugin.isEnabled)
+        assertTrue(player.isOnline)
+        module.loadOnJoin(player)
+        server.scheduler.performOneTick()
+
+        assertEquals(16, player.foodLevel)
+        assertEquals(23, player.level)
+        assertEquals(.45f, player.exp)
+        assertEquals(781, player.totalExperience)
+        assertEquals(14.5, player.health)
+        assertEquals(Material.DIAMOND, player.inventory.getItem(8)?.type)
+        assertEquals(Material.IRON_HELMET, player.inventory.helmet?.type)
+        assertEquals(Material.IRON_BOOTS, player.inventory.boots?.type)
+        assertEquals(Material.SHIELD, player.inventory.itemInOffHand.type)
+        assertEquals(1, service.loads)
+    }
+
+    @Test fun `quit saves changed snapshot and publishes committed revision`() {
+        val player = server.addPlayer()
+        val baseline = state(player.uniqueId)
+        service.loaded = CompletableFuture.completedFuture(baseline)
+        module.loadOnJoin(player)
+        server.scheduler.performOneTick()
+        player.inventory.setItem(0, ItemStack(Material.EMERALD, 5))
+        player.foodLevel = 11
+
+        module.saveOnQuit(player).toCompletableFuture().join()
+
+        assertEquals(1, service.saves.size)
+        assertEquals(11, service.saves.single().foodLevel)
+        assertEquals(SerializedPlayerItem(PaperItemStackCodec.encode(ItemStack(Material.EMERALD, 5))!!), service.saves.single().inventory[0])
+        assertTrue(eventBus.events.single() is PlayerStateUpdated)
+        assertEquals(8L, (eventBus.events.single() as PlayerStateUpdated).revision)
+    }
+
+    @Test fun `new player vanilla defaults are saved on quit`() {
+        val player = server.addPlayer()
+        player.inventory.setItem(0, ItemStack(Material.DIAMOND, 32))
+        player.level = 8
+        player.foodLevel = 5
+        service.loaded = CompletableFuture.completedFuture(null)
+        module.loadOnJoin(player)
+        server.scheduler.performOneTick()
+        assertNull(player.inventory.getItem(0))
+        assertEquals(20, player.foodLevel)
+        assertEquals(0, player.level)
+        module.saveOnQuit(player).toCompletableFuture().join()
+
+        assertEquals(1, service.saves.size)
+        assertNull(service.saves.single().inventory.first())
+        assertEquals(20, service.saves.single().foodLevel)
+        assertEquals(0, service.saves.single().level)
+    }
+
+    @Test fun `experience levels and progress restore at zero ordinary and high levels`() {
+        listOf(Triple(0, 0, 0f), Triple(17, 357, .63f), Triple(1000, 500_000, .91f)).forEach { (level, total, progress) ->
+            val player = server.addPlayer()
+            service.loaded = CompletableFuture.completedFuture(
+                PlayerState(player.uniqueId, List(36) { null }, List(4) { null }, null, 20.0, 20, progress, level, total, 5),
+            )
+            module.loadOnJoin(player)
+            server.scheduler.performOneTick()
+            assertEquals(level, player.level)
+            assertEquals(total, player.totalExperience)
+            assertEquals(progress, player.exp)
+        }
+    }
+
+    @Test fun `shutdown persists online state changes`() {
+        val player = server.addPlayer()
+        service.loaded = CompletableFuture.completedFuture(state(player.uniqueId))
+        module.loadOnJoin(player)
+        server.scheduler.performOneTick()
+        player.inventory.setItemInOffHand(ItemStack(Material.TORCH))
+
+        module.flushAndClose().toCompletableFuture().join()
+        assertEquals(1, service.saves.size)
+        assertTrue(service.saves.single().offhand != null)
+    }
+
+    @Test fun `paper codec preserves complex item metadata including persistent data`() {
+        val original = ItemStack(Material.DIAMOND_SWORD, 1)
+        original.editMeta { meta ->
+            meta.displayName(Component.text("Titan blade"))
+            meta.lore(listOf(Component.text("First line"), Component.text("Second line")))
+            meta.addEnchant(Enchantment.SHARPNESS, 5, true)
+            meta.addItemFlags(ItemFlag.HIDE_ENCHANTS)
+            meta.setCustomModelData(9042)
+            meta.persistentDataContainer.set(NamespacedKey("titansmp", "quality"), PersistentDataType.STRING, "legendary")
+        }
+        val decoded = PaperItemStackCodec.decode(PaperItemStackCodec.encode(original))!!
+
+        assertEquals(original.type, decoded.type)
+        assertEquals(original.amount, decoded.amount)
+        assertEquals(original.itemMeta, decoded.itemMeta)
+        assertNull(PaperItemStackCodec.encode(ItemStack(Material.AIR)))
+    }
+
+    private fun state(uuid: UUID) = PlayerState(uuid, List(36) { null }, List(4) { null }, null, 20.0, 20, 0f, 0, 0, 7)
+    private fun encode(item: ItemStack) = SerializedPlayerItem(PaperItemStackCodec.encode(item)!!)
+
+    open class TestPlugin : JavaPlugin()
+
+    private class FakePlayerDataService : PlayerDataService {
+        var loaded: CompletableFuture<PlayerState?> = CompletableFuture.completedFuture(null)
+        val saves = mutableListOf<PlayerState>()
+        var loads = 0
+        override fun load(playerUuid: UUID, serverId: String): CompletionStage<PlayerState?> { loads++; return loaded }
+        override fun save(state: PlayerState, serverId: String): CompletionStage<PlayerState> {
+            saves += state
+            return CompletableFuture.completedFuture(state.withRevision(state.revision + 1))
+        }
+    }
+
+    private class RecordingEventBus : EventBus {
+        val events = mutableListOf<NetworkEvent>()
+        override fun publish(event: NetworkEvent): CompletionStage<Unit> { events += event; return CompletableFuture.completedFuture(Unit) }
+        override fun subscribe(eventType: EventType, listener: EventListener): EventSubscription = EventSubscription {}
+        override fun close() = Unit
+    }
+}

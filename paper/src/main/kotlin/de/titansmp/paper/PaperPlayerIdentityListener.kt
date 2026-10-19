@@ -13,6 +13,7 @@ import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CompletionStage
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.logging.Logger
@@ -21,10 +22,15 @@ import java.util.logging.Logger
 class PaperPlayerIdentityListener(
     private val runtime: CompletableFuture<PaperPlayerIdentityRuntime>,
     private val logger: Logger,
+    private val onMain: ((() -> Unit) -> Unit),
     private val persistence: ExecutorService = Executors.newSingleThreadExecutor { task ->
         Thread(task, "titansmp-player-identity").apply { isDaemon = true }
     },
 ) : Listener, AutoCloseable {
+    @Volatile var onPlayerOnline: (UUID) -> Unit = {}
+    @Volatile var onPlayerOnlineFailure: (UUID, Throwable) -> Unit = { _, _ -> }
+    @Volatile var beforePlayerOffline: (org.bukkit.entity.Player) -> CompletionStage<Unit> = { CompletableFuture.completedFuture(Unit) }
+
     @EventHandler
     fun onJoin(event: PlayerJoinEvent) {
         val uuid = event.player.uniqueId
@@ -37,6 +43,7 @@ class PaperPlayerIdentityListener(
                 val previous = playerService.createOrLoad(uuid, username)
                 val previousServer = previous.currentServer
                 playerService.setOnline(uuid, serverId)
+                onMain { onPlayerOnline(uuid) }
                 val event = if (previous.online && previousServer != null && previousServer != serverId) {
                     PlayerServerChanged(
                         EventMetadata(eventType = PlayerServerChanged.TYPE, sourceServerId = serverId),
@@ -53,26 +60,31 @@ class PaperPlayerIdentityListener(
                     )
                 }
                 publish(dependencies.eventBus, event.metadata.eventType, event)
-            }.onFailure { logger.severe("Could not update player identity for $uuid: ${it.message}") }
+            }.onFailure {
+                logger.severe("Could not update player identity for $uuid: ${it.message}")
+                onMain { onPlayerOnlineFailure(uuid, it) }
+            }
         }
     }
 
     @EventHandler
     fun onQuit(event: PlayerQuitEvent) {
-        val uuid: UUID = event.player.uniqueId
-        persistence.execute {
-            runCatching {
-                val dependencies = runtime.get()
-                val playerService = dependencies.playerService
-                val serverId = dependencies.serverId
-                if (playerService.setOffline(uuid, serverId)) {
-                    publish(dependencies.eventBus,
-                        PlayerDisconnected.TYPE,
-                        PlayerDisconnected(EventMetadata(eventType = PlayerDisconnected.TYPE, sourceServerId = serverId), uuid, serverId),
-                    )
-                }
+        val uuid = event.player.uniqueId
+        val saving = try { beforePlayerOffline(event.player) } catch (failure: Throwable) { CompletableFuture.failedFuture(failure) }
+        saving.whenComplete { _, saveFailure ->
+            if (saveFailure != null) {
+                logger.severe("Player state save failed for $uuid; leaving presence online: ${saveFailure.cause?.message ?: saveFailure.message}")
+                return@whenComplete
             }
-                .onFailure { logger.severe("Could not update player identity for $uuid: ${it.message}") }
+            persistence.execute {
+                runCatching {
+                    val dependencies = runtime.get()
+                    if (dependencies.playerService.setOffline(uuid, dependencies.serverId)) {
+                        publish(dependencies.eventBus, PlayerDisconnected.TYPE,
+                            PlayerDisconnected(EventMetadata(eventType = PlayerDisconnected.TYPE, sourceServerId = dependencies.serverId), uuid, dependencies.serverId))
+                    }
+                }.onFailure { logger.severe("Could not update player identity for $uuid: ${it.message}") }
+            }
         }
     }
 

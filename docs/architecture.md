@@ -47,8 +47,7 @@ Platform wiring belongs in these modules. Paper forwards join and quit events as
 
 Each feature module encapsulates its own domain and uses shared infrastructure through `core`. Contracts required by other modules belong in `api`. Feature modules must not create parallel database or Redis systems.
 
-- **`modules/data-bridge`** is reserved for a future strongly adapted TitanSMP module based on `mc-data-bridge`. This structure does not include an upstream fork or copied code.
-  A source audit and integration proposal are documented in [data-bridge-audit.md](data-bridge-audit.md). It recommends using the existing database service and Redis Event Bus, and keeping Paper serialization/lifecycle code in a platform adapter. The audit does not add projects, runtime behavior, dependencies, tables, or events.
+- **`modules/data-bridge`** contains the TitanSMP-native Phase 1 player-state model persistence service and JDBC repository. Its public contract is in root `api`. Paper snapshot/application, lifecycle wiring, and Paper-native item serialization are in root `paper` to reuse the existing platform boundary without creating nested Gradle task cycles. The source audit is design input only; no upstream code was copied.
 - **`modules/ender-chest`** owns the platform-independent TitanSMP EnderChest storage service and JDBC repository. Its public DTO/service contract lives in root `api`; Paper GUI, command, item serialization, and vanilla EnderChest interception live in `paper`. Both entry points use the same UUID-keyed MariaDB row and revision-checked saves. LuckPerms supplies permission checks; it does not define storage identity or persisted rank state.
 - **`modules/moderation`** owns moderation-related functionality.
 - **`modules/chat`** owns chat functionality.
@@ -72,7 +71,8 @@ Allowed Gradle project dependencies are:
 ```text
 core      -> api
 modules/ender-chest -> api, core
-paper     -> api, core, modules/ender-chest
+modules/data-bridge -> api, core
+paper     -> api, core, modules/ender-chest, modules/data-bridge
 velocity  -> api, core
 modules/* -> api, core
 services/web-api -> (no project dependency declared yet)
@@ -80,6 +80,6 @@ services/web-api -> (no project dependency declared yet)
 
 `api` depends on no TitanSMP module. `core` must not depend on `paper`, `velocity`, feature modules, or services. Feature modules and platform integrations may depend on the foundation, but must not depend on one another by default. If a feature needs to expose a contract, that contract belongs in `api`.
 
-`modules/discord` is a standalone process while retaining the feature-module dependency direction (`api` and `core`). `services/web-api` has no project dependency configured at this stage, keeping its future service calls separate from direct database access.
+`modules/discord` is a standalone process while retaining the feature-module dependency direction (`api` and `core`). `services/web-api` has no project dependency configured at this stage, keeping its future service calls separate from direct database access. The Data Bridge Paper adapter is hosted by the existing root `paper` project; it does not create a second Paper plugin or dependency cycle.
 
-These directions are acyclic: foundation contracts sit at the bottom, shared implementation depends on those contracts, and integrations/features depend on the foundation. Database and Redis connections are implemented only in `core`; feature modules do not own their own pools or clients. No Discord bot, Web API endpoints, or other Minecraft features are implemented in the current structure. See [player-identity.md](player-identity.md) for identity and concurrency details.
+These directions are acyclic: foundation contracts sit at the bottom, shared implementation depends on those contracts, and integrations/features depend on the foundation. Database and Redis connections are implemented only in `core`; feature modules reuse them. See [player-identity.md](player-identity.md), [ender-chest.md](ender-chest.md), and [data-bridge.md](data-bridge.md) for the implemented state and storage boundaries. No Phase 2 player-state features are included.

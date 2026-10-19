@@ -3,6 +3,7 @@ package de.titansmp.core.event
 import de.titansmp.api.event.EventEnvelope
 import de.titansmp.api.event.EventMetadata
 import de.titansmp.api.event.EventType
+import de.titansmp.api.databridge.PlayerStateUpdated
 import de.titansmp.api.player.event.PlayerConnected
 import de.titansmp.api.player.event.PlayerDisconnected
 import de.titansmp.api.player.event.PlayerServerChanged
@@ -42,6 +43,13 @@ class NetworkEventSerializerTest {
             PlayerServerChanged(metadata.copy(eventType = PlayerServerChanged.TYPE), playerId, "smp-01", "lobby-01"),
         )
         events.forEach { assertEquals(it, serializer.deserialize(serializer.serialize(EventEnvelope(it))).event) }
+    }
+
+    @Test
+    fun `player state update event round trips uuid and revision only`() {
+        val event = PlayerStateUpdated(metadata.copy(eventType = PlayerStateUpdated.TYPE), UUID.randomUUID(), 42)
+        val decoded = serializer.deserialize(serializer.serialize(EventEnvelope(event))).event
+        assertEquals(event, decoded)
     }
 
     @Test
