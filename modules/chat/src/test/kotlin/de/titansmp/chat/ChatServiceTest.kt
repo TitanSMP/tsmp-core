@@ -4,6 +4,8 @@ import de.titansmp.api.chat.ChatException
 import de.titansmp.api.chat.ChatMessage
 import de.titansmp.api.chat.ChatMessageSource
 import de.titansmp.api.chat.NetworkChatMessage
+import de.titansmp.api.display.PlayerDisplayMeta
+import de.titansmp.api.display.PlayerDisplayService
 import de.titansmp.api.event.EventBus
 import de.titansmp.api.event.EventEnvelope
 import de.titansmp.api.event.EventListener
@@ -37,6 +39,18 @@ class ChatServiceTest {
     private val bus = RecordingBus()
     private var allowed = true
     private var muted = false
+    private var displayPrefix = ""
+    private var displayFails = false
+    private val display = object : PlayerDisplayService {
+        override fun displayMeta(playerUuid: UUID): CompletionStage<PlayerDisplayMeta> =
+            if (displayFails) CompletableFuture.failedFuture(IllegalStateException("display unavailable"))
+            else CompletableFuture.completedFuture(PlayerDisplayMeta(playerUuid, displayPrefix, "[TITAN]", 10))
+
+        override fun cachedMeta(playerUuid: UUID): PlayerDisplayMeta? = null
+        override fun refresh(playerUuid: UUID): CompletionStage<PlayerDisplayMeta> = displayMeta(playerUuid)
+        override fun invalidate(playerUuid: UUID) = Unit
+        override fun cachedPlayers(): Set<UUID> = emptySet()
+    }
     private val permissions = ModerationPermissionService { _, node ->
         CompletableFuture.completedFuture(node == "titansmp.chat.use" && allowed)
     }
@@ -51,7 +65,7 @@ class ChatServiceTest {
     }
 
     private fun service(config: ChatConfig = ChatConfig(messagesPerWindow = 2, windowMs = 3_000)) =
-        DefaultChatService(bus, moderation, permissions, config, clock)
+        DefaultChatService(bus, moderation, permissions, display, config, clock)
 
     @Test fun `valid minecraft message publishes event with configured server and UTC instant`() {
         val message = service().send(sender, "Henry", "Hello", "smp-01").toCompletableFuture().join()
@@ -59,6 +73,22 @@ class ChatServiceTest {
         assertEquals("smp-01", message.serverId)
         assertEquals(Instant.parse("2026-10-19T20:00:00Z"), message.timestamp)
         assertEquals(ChatMessageSource.MINECRAFT, message.source)
+        assertIs<NetworkChatMessage>(bus.events.single())
+    }
+
+    @Test fun `chat uses the display prefix and ignores the clan suffix`() {
+        displayPrefix = "[Admin]"
+        val message = service().send(sender, "Henry", "Hello", "smp-01").toCompletableFuture().join()
+        assertEquals("[Admin]", message.prefix)
+        val published = assertIs<NetworkChatMessage>(bus.events.single()).message
+        assertEquals("[Admin]", published.prefix)
+        assertFalse(published.prefix.contains("[TITAN]"))
+    }
+
+    @Test fun `chat still sends when display prefix resolution fails`() {
+        displayFails = true
+        val message = service().send(sender, "Henry", "Hello", "smp-01").toCompletableFuture().join()
+        assertEquals("", message.prefix)
         assertIs<NetworkChatMessage>(bus.events.single())
     }
 

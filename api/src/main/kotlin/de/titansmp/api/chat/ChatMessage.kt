@@ -5,7 +5,12 @@ import java.util.UUID
 
 enum class ChatMessageSource { MINECRAFT, DISCORD, WEB, SYSTEM }
 
-/** Platform-independent chat payload. Player identities are UUIDs; non-player sources may omit one. */
+/**
+ * Platform-independent chat payload. Player identities are UUIDs; non-player sources may omit one.
+ *
+ * [prefix] is the sender's display prefix resolved by the shared `PlayerDisplayService`. It is the only
+ * prefix the chat renderer may use; chat never resolves prefixes itself and never renders a clan suffix.
+ */
 data class ChatMessage(
     val messageId: UUID,
     val senderUuid: UUID?,
@@ -14,6 +19,7 @@ data class ChatMessage(
     val serverId: String,
     val timestamp: Instant,
     val source: ChatMessageSource,
+    val prefix: String = "",
 ) {
     init {
         require(senderName.isNotBlank()) { "Chat sender name must not be blank" }

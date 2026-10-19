@@ -1,6 +1,6 @@
 # TitanSMP
 
-TitanSMP is a Kotlin monorepo for a modular Minecraft network built on Paper and Velocity. Shared player identity, the network EnderChest, and the Data Bridge player-state transfer path are implemented on the common infrastructure.
+TitanSMP is a Kotlin monorepo for a modular Minecraft network built on Paper and Velocity. Shared player identity, the network EnderChest, the Data Bridge player-state transfer path, and the shared player display/TAB layer are implemented on the common infrastructure.
 
 ## Foundation and platform modules
 

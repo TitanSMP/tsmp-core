@@ -15,8 +15,9 @@ See [data-bridge-audit.md](data-bridge-audit.md) for the source audit of the ups
 See [ender-chest.md](ender-chest.md) for the network-wide TitanSMP EnderChest architecture, persistence, access rules, and transfer consistency limits.
 See [moderation.md](moderation.md) for the network-wide moderation service, LuckPerms permissions and immunity, durable punishment history, Redis propagation, Paper commands, and Velocity ban enforcement.
 See [chat.md](chat.md) for the network chat service, message/event model, moderation and permission checks, Paper integration, rate limits, length validation, and duplicate protection.
+See [display.md](display.md) for the shared player display/meta layer, LuckPerms-backed prefix and weight resolution, the network-wide Velocity TAB list, Paper nametags, chat prefix integration, and clan-suffix preparation.
 
-The repository is organized into platform-independent contracts (`api`), shared infrastructure (`core`), platform integrations (`paper` and `velocity`), feature modules under `modules/`, and standalone services under `services/`. Player identity, the independent EnderChest, Data Bridge Phases 1, 1.5, 2, and 3, network moderation, and network chat are implemented. Other feature modules remain structural placeholders. MariaDB is the durable source of truth; Redis carries transfer coordination and network events including ephemeral chat messages.
+The repository is organized into platform-independent contracts (`api`), shared infrastructure (`core`), platform integrations (`paper` and `velocity`), feature modules under `modules/`, and standalone services under `services/`. Player identity, the independent EnderChest, Data Bridge Phases 1, 1.5, 2, and 3, network moderation, network chat, and the shared player display/TAB layer are implemented. Other feature modules remain structural placeholders. MariaDB is the durable source of truth; Redis carries transfer coordination and network events including ephemeral chat messages and display-meta change notifications.
 
 ## Module inventory
 
@@ -33,6 +34,7 @@ The repository is organized into platform-independent contracts (`api`), shared 
 - `modules/ender-chest`
 - `modules/moderation`
 - `modules/chat`
+- `modules/display`
 - `modules/economy`
 - `modules/social`
 - `modules/stats`

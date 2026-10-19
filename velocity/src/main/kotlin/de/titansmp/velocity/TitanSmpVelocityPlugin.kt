@@ -18,10 +18,14 @@ import de.titansmp.api.event.EventListener
 import de.titansmp.api.event.EventMetadata
 import de.titansmp.api.event.EventSubscription
 import de.titansmp.core.databridge.PlayerTransferRegistry
+import de.titansmp.core.display.DefaultPlayerDisplayService
+import de.titansmp.core.display.LuckPermsDisplayListener
+import de.titansmp.core.display.LuckPermsDisplayProvider
 import de.titansmp.core.lifecycle.TitanSmpRuntime
 import de.titansmp.core.moderation.DefaultModerationService
 import de.titansmp.core.moderation.JdbcModerationRepository
 import de.titansmp.core.moderation.LuckPermsModerationPermissionService
+import de.titansmp.velocity.display.VelocityTabListModule
 import de.titansmp.api.moderation.PlayerBanned
 import de.titansmp.api.moderation.PlayerKicked
 import de.titansmp.api.moderation.PlayerMuted
@@ -52,6 +56,9 @@ class TitanSmpVelocityPlugin @Inject constructor(
     private val byPlayer = ConcurrentHashMap<UUID, UUID>()
     private val subscriptions = mutableListOf<EventSubscription>()
     @Volatile private var moderation: de.titansmp.api.moderation.ModerationService? = null
+    @Volatile private var displayService: DefaultPlayerDisplayService? = null
+    private var displayListener: LuckPermsDisplayListener? = null
+    private var tabListModule: VelocityTabListModule? = null
     private val moderationExecutor = java.util.concurrent.Executors.newFixedThreadPool(2) { task ->
         Thread(task, "titansmp-velocity-moderation-db").apply { isDaemon = true }
     }
@@ -65,13 +72,24 @@ class TitanSmpVelocityPlugin @Inject constructor(
             runtime = started
             proxyServerId = serverIdentity.identity.id
             timeoutMs = started.playerTransferTimeoutMs
+            val luckPerms = LuckPermsProvider.get()
             moderation = DefaultModerationService(
                 JdbcModerationRepository(started.databaseDataSource()),
-                LuckPermsModerationPermissionService(LuckPermsProvider.get()),
+                LuckPermsModerationPermissionService(luckPerms),
                 bus,
                 moderationExecutor,
                 logger = java.util.logging.Logger.getLogger("de.titansmp.velocity.moderation"),
             )
+            val displayLogger = java.util.logging.Logger.getLogger("de.titansmp.velocity.display")
+            val display = DefaultPlayerDisplayService(
+                LuckPermsDisplayProvider(luckPerms),
+                eventBus = bus,
+                serverId = proxyServerId,
+                logger = displayLogger,
+            )
+            displayService = display
+            displayListener = LuckPermsDisplayListener(luckPerms, display, displayLogger)
+            tabListModule = VelocityTabListModule(this, proxy, display, bus, logger).also { proxy.eventManager.register(this, it) }
             registry = PlayerTransferRegistry(cancelPublisher = { transfer, reason ->
                 bus.publish(PlayerTransferFailed(
                     EventMetadata(eventType = PlayerTransferFailed.TYPE, sourceServerId = proxyServerId),
@@ -92,6 +110,12 @@ class TitanSmpVelocityPlugin @Inject constructor(
         } catch (failure: Throwable) {
             subscriptions.forEach(EventSubscription::close)
             subscriptions.clear()
+            try { tabListModule?.close() } catch (closeFailure: Throwable) { failure.addSuppressed(closeFailure) }
+            tabListModule = null
+            try { displayListener?.close() } catch (closeFailure: Throwable) { failure.addSuppressed(closeFailure) }
+            displayListener = null
+            try { displayService?.close() } catch (closeFailure: Throwable) { failure.addSuppressed(closeFailure) }
+            displayService = null
             try { runtime?.close() } catch (closeFailure: Throwable) { failure.addSuppressed(closeFailure) }
             runtime = null
             eventBus = null
@@ -256,6 +280,12 @@ class TitanSmpVelocityPlugin @Inject constructor(
         subscriptions.forEach(EventSubscription::close)
         subscriptions.clear()
         pending.values.toList().forEach { fail(it, eventBus, "proxy-shutdown") }
+        try { tabListModule?.close() } catch (failure: Exception) { logger.error("TitanSMP Velocity TAB shutdown failed", failure) }
+        tabListModule = null
+        try { displayListener?.close() } catch (failure: Exception) { logger.error("TitanSMP Velocity display shutdown failed", failure) }
+        displayListener = null
+        try { displayService?.close() } catch (failure: Exception) { logger.error("TitanSMP Velocity display shutdown failed", failure) }
+        displayService = null
         try { runtime?.close() } catch (failure: Exception) { logger.error("TitanSMP Velocity shutdown failed", failure) }
         runtime = null
         moderation = null

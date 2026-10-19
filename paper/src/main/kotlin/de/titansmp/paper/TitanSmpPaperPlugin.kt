@@ -10,6 +10,10 @@ import de.titansmp.paper.databridge.PlayerDataPaperModule
 import de.titansmp.core.moderation.DefaultModerationService
 import de.titansmp.core.moderation.JdbcModerationRepository
 import de.titansmp.core.moderation.LuckPermsModerationPermissionService
+import de.titansmp.core.display.DefaultPlayerDisplayService
+import de.titansmp.core.display.LuckPermsDisplayListener
+import de.titansmp.core.display.LuckPermsDisplayProvider
+import de.titansmp.paper.display.PlayerDisplayPaperModule
 import de.titansmp.paper.moderation.ModerationPaperModule
 import de.titansmp.chat.DefaultChatService
 import de.titansmp.paper.chat.ChatPaperModule
@@ -29,6 +33,9 @@ class TitanSmpPaperPlugin : JavaPlugin() {
     @Volatile private var playerDataModule: PlayerDataPaperModule? = null
     @Volatile private var moderationModule: ModerationPaperModule? = null
     @Volatile private var chatModule: ChatPaperModule? = null
+    @Volatile private var displayModule: PlayerDisplayPaperModule? = null
+    @Volatile private var displayService: DefaultPlayerDisplayService? = null
+    private var displayListener: LuckPermsDisplayListener? = null
     @Volatile private var moderationPersistence: java.util.concurrent.ExecutorService? = null
     private val runtimeReady = CompletableFuture<PaperPlayerIdentityRuntime>()
     private val lifecycle = Executors.newSingleThreadExecutor { task ->
@@ -102,6 +109,15 @@ class TitanSmpPaperPlugin : JavaPlugin() {
                             serverIdentity.identity.id,
                             moderationExecutor,
                         ).also { it.register() }
+                        val display = DefaultPlayerDisplayService(
+                            LuckPermsDisplayProvider(luckPerms),
+                            eventBus = startedRuntime.eventBus(),
+                            serverId = serverIdentity.identity.id,
+                            logger = logger,
+                        )
+                        displayService = display
+                        displayListener = LuckPermsDisplayListener(luckPerms, display, logger)
+                        displayModule = PlayerDisplayPaperModule(this, display, startedRuntime.eventBus()).also { it.register() }
                         chatModule = ChatPaperModule(
                             this,
                             DefaultChatService(
@@ -109,6 +125,7 @@ class TitanSmpPaperPlugin : JavaPlugin() {
                                 // Reuse the central moderation service's source-of-truth mute query.
                                 moderationService,
                                 LuckPermsModerationPermissionService(luckPerms),
+                                display,
                                 startedRuntime.chatConfig,
                             ),
                             startedRuntime.eventBus(),
@@ -168,6 +185,12 @@ class TitanSmpPaperPlugin : JavaPlugin() {
         moderationModule = null
         chatModule?.close()
         chatModule = null
+        displayModule?.close()
+        displayModule = null
+        displayListener?.close()
+        displayListener = null
+        displayService?.close()
+        displayService = null
         val moderationWorker = moderationPersistence
         moderationPersistence = null
         moderationWorker?.shutdown()

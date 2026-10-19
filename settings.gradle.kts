@@ -24,6 +24,7 @@ include(
     "modules:ender-chest",
     "modules:moderation",
     "modules:chat",
+    "modules:display",
     "modules:economy",
     "modules:social",
     "modules:stats",

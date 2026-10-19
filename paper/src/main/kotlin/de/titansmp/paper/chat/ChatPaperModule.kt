@@ -9,6 +9,7 @@ import de.titansmp.api.event.EventBus
 import de.titansmp.api.event.EventEnvelope
 import de.titansmp.api.event.EventListener
 import de.titansmp.api.event.EventSubscription
+import de.titansmp.core.display.PlayerDisplayFormat
 import io.papermc.paper.event.player.AsyncChatEvent
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
@@ -26,7 +27,7 @@ class ChatPaperModule(
     private val executor: java.util.concurrent.Executor,
     private val renderer: ChatRenderer = ChatRenderer { message ->
         if (message.source == de.titansmp.api.chat.ChatMessageSource.SYSTEM) "[System] ${message.message}"
-        else "[${message.serverId.uppercase()}] ${message.senderName}: ${message.message}"
+        else PlayerDisplayFormat.chatMessage(message.prefix, message.senderName, message.message)
     },
     private val receivedIds: de.titansmp.chat.RecentChatMessageCache = de.titansmp.chat.RecentChatMessageCache(),
 ) : Listener, AutoCloseable {

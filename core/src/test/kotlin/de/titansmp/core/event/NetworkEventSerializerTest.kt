@@ -20,6 +20,8 @@ import de.titansmp.api.moderation.PlayerKicked
 import de.titansmp.api.chat.ChatMessage
 import de.titansmp.api.chat.ChatMessageSource
 import de.titansmp.api.chat.NetworkChatMessage
+import de.titansmp.api.display.PlayerDisplayMeta
+import de.titansmp.api.display.PlayerDisplayMetaChanged
 import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
@@ -114,5 +116,23 @@ class NetworkEventSerializerTest {
         chatEvents.forEach { event ->
             assertEquals(event, serializer.deserialize(serializer.serialize(EventEnvelope(event))).event)
         }
+    }
+
+    @Test fun `chat prefix round trips and defaults to empty`() {
+        val prefixed = ChatMessage(UUID.randomUUID(), UUID.randomUUID(), "Henry", "Hallo", "smp-01", metadata.timestamp, ChatMessageSource.MINECRAFT, "[Admin]")
+        val event = NetworkChatMessage(metadata.copy(eventType = NetworkChatMessage.TYPE), prefixed)
+        assertEquals(event, serializer.deserialize(serializer.serialize(EventEnvelope(event))).event)
+
+        val withoutPrefix = ChatMessage(UUID.randomUUID(), UUID.randomUUID(), "Henry", "Hallo", "smp-01", metadata.timestamp, ChatMessageSource.MINECRAFT)
+        assertEquals("", withoutPrefix.prefix)
+    }
+
+    @Test fun `display meta change event round trips nullable suffix and weight`() {
+        val player = UUID.randomUUID()
+        val events = listOf(
+            PlayerDisplayMetaChanged(metadata.copy(eventType = PlayerDisplayMetaChanged.TYPE), player, PlayerDisplayMeta(player, "[Admin]", null, 100)),
+            PlayerDisplayMetaChanged(metadata.copy(eventType = PlayerDisplayMetaChanged.TYPE), player, PlayerDisplayMeta(player, "", "[TITAN]", 0)),
+        )
+        events.forEach { assertEquals(it, serializer.deserialize(serializer.serialize(EventEnvelope(it))).event) }
     }
 }

@@ -5,6 +5,7 @@ import de.titansmp.api.chat.ChatMessage
 import de.titansmp.api.chat.ChatMessageSource
 import de.titansmp.api.chat.ChatService
 import de.titansmp.api.chat.NetworkChatMessage
+import de.titansmp.api.display.PlayerDisplayService
 import de.titansmp.api.event.EventBus
 import de.titansmp.api.event.EventMetadata
 import de.titansmp.api.moderation.ModerationPermissionService
@@ -19,6 +20,7 @@ class DefaultChatService(
     private val eventBus: EventBus,
     private val moderation: ModerationService,
     private val permissions: ModerationPermissionService,
+    private val display: PlayerDisplayService,
     private val config: ChatConfig,
     private val clock: Clock = Clock.systemUTC(),
     private val limiter: ChatRateLimiter = ChatRateLimiter(config.messagesPerWindow, config.windowMs, config.rateLimitEnabled, clock),
@@ -37,7 +39,7 @@ class DefaultChatService(
             isMuted(senderUuid).thenCompose { muted ->
                 if (muted) return@thenCompose failed<ChatMessage>(ChatException(ChatException.Code.MUTED, "You are muted and cannot chat."))
                 if (!limiter.tryAcquire(senderUuid)) return@thenCompose failed<ChatMessage>(ChatException(ChatException.Code.RATE_LIMITED, "You are sending messages too quickly."))
-                broadcast(chatMessage).thenApply { chatMessage }
+                withPrefix(chatMessage).thenCompose { prefixed -> broadcast(prefixed).thenApply { prefixed } }
             }
         }.exceptionallyCompose { failure ->
             val cause = unwrap(failure)
@@ -86,6 +88,22 @@ class DefaultChatService(
         }
     } catch (failure: Throwable) {
         failed(ChatException(ChatException.Code.MODERATION_CHECK_FAILED, "Your moderation status could not be checked right now.", failure))
+    }
+
+    /**
+     * Attaches the sender's display prefix resolved by the shared `PlayerDisplayService`. The prefix is the
+     * only rank data the chat renderer may use; chat never resolves ranks itself and never renders a clan
+     * suffix. Prefix resolution is best effort: if it fails the message is still sent with an empty prefix.
+     */
+    private fun withPrefix(message: ChatMessage): CompletionStage<ChatMessage> {
+        val senderUuid = message.senderUuid ?: return CompletableFuture.completedFuture(message)
+        return try {
+            display.displayMeta(senderUuid).handle { meta, failure ->
+                if (failure != null || meta == null) message else message.copy(prefix = meta.prefix)
+            }
+        } catch (failure: Throwable) {
+            CompletableFuture.completedFuture(message)
+        }
     }
 
     private fun <T> failed(failure: Throwable): CompletionStage<T> = CompletableFuture.failedFuture(failure)

@@ -26,6 +26,8 @@ import de.titansmp.api.moderation.PlayerKicked
 import de.titansmp.api.chat.ChatMessage
 import de.titansmp.api.chat.ChatMessageSource
 import de.titansmp.api.chat.NetworkChatMessage
+import de.titansmp.api.display.PlayerDisplayMeta
+import de.titansmp.api.display.PlayerDisplayMetaChanged
 import java.time.Instant
 import java.util.UUID
 
@@ -71,7 +73,21 @@ class NetworkEventSerializer(
             NetworkChatMessage.TYPE -> NetworkChatMessage(metadata, ChatMessage(
                 payload.uuid("messageId"), payload.nullableUuid("senderUuid"), payload.text("senderName"), payload.text("message"),
                 payload.text("serverId"), payload.instant("timestamp"), ChatMessageSource.valueOf(payload.text("source")),
+                payload.path("prefix").textValue() ?: "",
             ))
+            PlayerDisplayMetaChanged.TYPE -> {
+                val playerUuid = payload.uuid("playerUuid")
+                PlayerDisplayMetaChanged(
+                    metadata,
+                    playerUuid,
+                    PlayerDisplayMeta(
+                        playerUuid,
+                        payload.path("prefix").textValue() ?: "",
+                        payload.nullableText("suffix"),
+                        payload.path("weight").intValue(),
+                    ),
+                )
+            }
             PlayerStateUpdated.TYPE -> PlayerStateUpdated(metadata, payload.uuid("playerUuid"), payload.path("revision").longValue())
             PlayerTransferPrepare.TYPE -> PlayerTransferPrepare(metadata, payload.uuid("transferId"), payload.uuid("playerUuid"), payload.text("sourceServerId"), payload.text("targetServerId"), payload.instant("timestamp"))
             PlayerTransferReady.TYPE -> PlayerTransferReady(metadata, payload.uuid("transferId"), payload.uuid("playerUuid"), payload.text("sourceServerId"), payload.text("targetServerId"), payload.path("stateRevision").longValue(), payload.instant("timestamp"))
@@ -111,6 +127,14 @@ class NetworkEventSerializer(
                 if (message.senderUuid == null) node.putNull("senderUuid") else node.put("senderUuid", message.senderUuid.toString())
                 node.put("senderName", message.senderName); node.put("message", message.message); node.put("serverId", message.serverId)
                 node.put("timestamp", message.timestamp.toString()); node.put("source", message.source.name)
+                node.put("prefix", message.prefix)
+            }
+            is PlayerDisplayMetaChanged -> {
+                val meta = event.displayMeta
+                node.put("playerUuid", event.playerUuid.toString())
+                node.put("prefix", meta.prefix)
+                if (meta.suffix == null) node.putNull("suffix") else node.put("suffix", meta.suffix)
+                node.put("weight", meta.weight)
             }
             is PlayerStateUpdated -> {
                 node.put("playerUuid", event.playerUuid.toString())

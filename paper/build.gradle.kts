@@ -9,6 +9,7 @@ dependencies {
     implementation(project(":modules:data-bridge"))
     implementation(project(":modules:moderation"))
     implementation(project(":modules:chat"))
+    implementation(project(":modules:display"))
     compileOnly("io.papermc.paper:paper-api:26.3.build.205-stable")
     compileOnly("net.luckperms:api:5.5")
 
@@ -36,4 +37,5 @@ tasks.jar {
     from(project(":modules:data-bridge").the<SourceSetContainer>()["main"].output)
     from(project(":modules:moderation").the<SourceSetContainer>()["main"].output)
     from(project(":modules:chat").the<SourceSetContainer>()["main"].output)
+    from(project(":modules:display").the<SourceSetContainer>()["main"].output)
 }

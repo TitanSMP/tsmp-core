@@ -12,13 +12,13 @@ The existing EventBus uses the shared `titansmp:<network-id>:events:v1` channel 
 
 ## Paper and moderation
 
-Paper uses the current `AsyncChatEvent` from the Paper event API. It extracts the plain text component, cancels vanilla distribution, and invokes `ChatService` asynchronously. Incoming events are scheduled onto the Paper main thread and sent to local online players as plain text. The default format is `[SMP-01] Henry: Hello`; the `ChatRenderer` abstraction can change this without moving formatting rules into the business service. System messages use `[System] ...`.
+Paper uses the current `AsyncChatEvent` from the Paper event API. It extracts the plain text component, cancels vanilla distribution, and invokes `ChatService` asynchronously. Incoming events are scheduled onto the Paper main thread and sent to local online players as plain text. The default format is `prefix + name: message`, for example `[Admin] Henry: Hello`; the `prefix` is resolved by the shared `PlayerDisplayService` before the message is published, and the `ChatRenderer` abstraction can change the layout without moving formatting rules into the business service. Chat never renders a clan suffix. System messages use `[System] ...`.
 
 Muted players are denied by the shared moderation service, not by a second mute table or local-only cache. Permission and moderation lookup failures fail closed and show a readable error. The message never publishes if the player lacks chat permission, is muted, exceeds the limit, sends only whitespace, or cannot publish to Redis.
 
 ## Permissions
 
-LuckPerms remains the permission authority. The chat service reuses the existing platform permission adapter and performs normal LuckPerms node queries; it does not store ranks, prefixes, groups, or permission data.
+LuckPerms remains the permission authority. The chat service reuses the existing platform permission adapter and performs normal LuckPerms node queries; it does not store ranks, prefixes, groups, or permission data. The display prefix is resolved separately by the shared `PlayerDisplayService` (see [display.md](display.md)) and attached to the message; chat does not resolve prefixes itself.
 
 | Permission | Current behavior |
 | --- | --- |
@@ -44,8 +44,8 @@ Messages are rejected if empty or whitespace-only. Length is measured in Kotlin/
 
 ## Identity and future sources
 
-The origin server ID comes from the shared `ServerIdentity`; chat does not create server identities or player records. Server transfer requires no chat-state migration. A later Discord adapter or Web API can call the platform-independent `ChatService`/event contract and use `DISCORD` or `WEB`; no separate Redis transport is needed. System events can use `SYSTEM`. The current implementation has no Discord bot, Web API, persistent chat history, rank/prefix integration, or voice-chat behavior.
+The origin server ID comes from the shared `ServerIdentity`; chat does not create server identities or player records. Server transfer requires no chat-state migration. A later Discord adapter or Web API can call the platform-independent `ChatService`/event contract and use `DISCORD` or `WEB`; no separate Redis transport is needed. System events can use `SYSTEM`. The current implementation has no Discord bot, Web API, persistent chat history, or voice-chat behavior.
 
 ## Tests
 
-Unit tests cover message validation, empty and overlong content, mute and permission denial, the per-UUID rate limit and window reset, Redis failure, system messages without player UUID, and duplicate ID cache expiry/capacity. Core serializer tests round-trip every source value and nullable sender UUID. Configuration tests exercise the defaults, overrides, and invalid values.
+Unit tests cover message validation, empty and overlong content, mute and permission denial, the per-UUID rate limit and window reset, Redis failure, system messages without player UUID, the display prefix attached to sent messages, prefix-resolution fallback, and duplicate ID cache expiry/capacity. Core serializer tests round-trip every source value, nullable sender UUID, and the chat prefix. Configuration tests exercise the defaults, overrides, and invalid values.
