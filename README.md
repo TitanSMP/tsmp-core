@@ -2,7 +2,7 @@
 
 TitanSMP is a Kotlin monorepo for a modular Minecraft network built on Paper and Velocity. This repository currently contains the project and module structure only; no network features have been implemented yet.
 
-## Modules
+## Foundation and platform modules
 
 - `api` – public, platform-independent interfaces, DTOs, enums, and other abstractions. It has no Paper or Velocity dependencies.
 - `core` – shared implementation and central network logic. It may depend on `api`.
@@ -10,6 +10,8 @@ TitanSMP is a Kotlin monorepo for a modular Minecraft network built on Paper and
 - `velocity` – Velocity-specific implementation only. It may depend on `api` and `core`.
 
 Paper and Velocity APIs are declared as `compileOnly` dependencies in their respective modules. MariaDB and Redis dependencies will be considered when the corresponding infrastructure is needed.
+
+Feature modules and standalone services are listed in the [module architecture documentation](docs/architecture.md). The documentation index is in [docs/README.md](docs/README.md).
 
 ## Requirements
 

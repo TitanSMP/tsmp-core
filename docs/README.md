@@ -1,68 +1,38 @@
 # TitanSMP Documentation
 
-This directory contains the technical documentation and planning documents for the TitanSMP network platform.
+This directory contains architecture and planning documents for the TitanSMP monorepo.
 
-## Current status
+## Architecture
 
-The repository currently contains the initial Gradle multi-module foundation:
+See [architecture.md](architecture.md) for the current module layout, module responsibilities, and allowed dependency directions.
 
-- `api` — platform-independent public contracts and abstractions.
-- `core` — shared implementation and central network logic.
-- `paper` — Paper-specific integration.
-- `velocity` — Velocity-specific integration.
+The repository is organized into platform-independent contracts (`api`), shared infrastructure (`core`), platform integrations (`paper` and `velocity`), feature modules under `modules/`, and standalone services under `services/`. The modules currently provide build and source-set structure only; feature implementations are intentionally not included.
 
-The project is currently infrastructure-only. Network features have not yet been implemented.
+## Module inventory
 
-## Planned architecture
+### Foundation and platform integrations
 
-TitanSMP is intended to be a modular monorepo rather than one large plugin or a collection of unrelated repositories. Shared infrastructure should live in the core/API layers, while larger feature areas are isolated into modules that can produce their own artifacts where appropriate.
+- `api`
+- `core`
+- `paper`
+- `velocity`
 
-Planned infrastructure:
+### Feature modules
 
-- Paper
-- Velocity
-- MariaDB as the persistent source of truth
-- Redis for fast cross-server communication, events and caching where appropriate
-- LuckPerms for permissions and rank management
-- A network-wide player/data synchronization module based on and substantially adapted from `mc-data-bridge`
+- `modules/data-bridge`
+- `modules/moderation`
+- `modules/chat`
+- `modules/economy`
+- `modules/social`
+- `modules/stats`
+- `modules/auction-house`
+- `modules/admin-shop`
+- `modules/tab`
+- `modules/scoreboard`
+- `modules/discord` — a standalone service/process, not a Paper plugin
 
-Planned network features include:
+### Services
 
-- Network-wide chat
-- Cross-server player data/inventory/ender chest synchronization
-- TAB and optionally scoreboards
-- Network-wide moderation (`ban`, `unban`, `mute`, `unmute`, `kick`, `invsee`, `endersee`)
-- Economy and `/pay`
-- Auction House
-- Admin Shop
-- Friends
-- Clans
-- Player statistics, playtime and advancements
-- Web API for the existing Next.js website
-- Discord bot and Minecraft/Discord account linking
-- Minecraft ↔ Discord chat integration
+- `services/web-api` — a standalone service for the existing Next.js website; the website must not access MariaDB directly
 
-The Discord bot is planned as part of this repository and should be implemented as a standalone service/module rather than as a Paper plugin.
-
-## Database strategy
-
-TitanSMP should use one MariaDB database for TitanSMP-owned persistent data, logically separated by tables and repositories per domain. A separate MariaDB database for LuckPerms is recommended rather than sharing TitanSMP's tables with LuckPerms.
-
-LuckPerms remains the authoritative system for permissions and groups. TitanSMP may integrate with LuckPerms to read and manage ranks, but should not maintain a second independent rank database.
-
-## Documentation roadmap
-
-Additional documents should be added here as the architecture is finalized, especially:
-
-- module architecture
-- database schema
-- Redis/event architecture
-- permissions and LuckPerms integration
-- player data synchronization
-- moderation architecture
-- web API specification
-- Discord integration
-- economy architecture
-- deployment and configuration
-
-This documentation is intentionally kept separate from implementation details so that architectural decisions can be reviewed before large amounts of code are written.
+The `data-bridge` module is reserved for a future TitanSMP adaptation based on `mc-data-bridge`. No upstream code has been copied or forked into this repository.

@@ -1,0 +1,80 @@
+# Module Architecture
+
+TitanSMP is a Gradle multi-module monorepo. This document defines the responsibilities and permitted project dependencies for the current structure. The modules are scaffolding only; they do not yet contain feature implementations.
+
+## Layout
+
+```text
+api/
+core/
+paper/
+velocity/
+modules/
+  data-bridge/
+  moderation/
+  chat/
+  economy/
+  social/
+  stats/
+  auction-house/
+  admin-shop/
+  tab/
+  scoreboard/
+  discord/
+services/
+  web-api/
+```
+
+Kotlin sources use the `de.titansmp` package root. Each module has a corresponding package directory under `src/main/kotlin/de/titansmp/`.
+
+## Responsibilities
+
+### Foundation
+
+- **`api`** contains only public, platform-independent interfaces, DTOs, enums, and contracts. It has no Paper, Bukkit, Velocity, MariaDB, or Redis implementation dependencies.
+- **`core`** contains shared implementations and central services. It owns the common database and Redis abstractions and central player, server, and service infrastructure. Platform-specific code does not belong here.
+
+### Platform integrations
+
+- **`paper`** contains Paper-specific implementation and integration code. It may depend on `api` and `core`; the Paper API is confined to this module.
+- **`velocity`** contains Velocity-specific implementation and integration code. It may depend on `api` and `core`; the Velocity API is confined to this module.
+
+Platform wiring belongs in these modules. Feature modules remain separate from Paper and Velocity APIs.
+
+### Feature modules
+
+Each feature module encapsulates its own domain and uses shared infrastructure through `core`. Contracts required by other modules belong in `api`. Feature modules must not create parallel database or Redis systems.
+
+- **`modules/data-bridge`** is reserved for a future strongly adapted TitanSMP module based on `mc-data-bridge`. This structure does not include an upstream fork or copied code.
+- **`modules/moderation`** owns moderation-related functionality.
+- **`modules/chat`** owns chat functionality.
+- **`modules/economy`** owns economy functionality.
+- **`modules/social`** owns social functionality.
+- **`modules/stats`** owns player and network statistics functionality.
+- **`modules/auction-house`** owns auction house functionality.
+- **`modules/admin-shop`** owns admin shop functionality.
+- **`modules/tab`** owns TAB-related functionality.
+- **`modules/scoreboard`** owns scoreboard functionality.
+- **`modules/discord`** is a standalone service/process. It is not a Paper plugin and is not loaded by the Paper module.
+
+### Standalone service
+
+- **`services/web-api`** is a standalone service for the existing Next.js website. The website must not connect directly to MariaDB; the Web API is the intended service boundary for accessing TitanSMP services. No transport or service protocol is selected by this scaffolding.
+
+## Dependency direction
+
+Allowed Gradle project dependencies are:
+
+```text
+core      -> api
+paper     -> api, core
+velocity  -> api, core
+modules/* -> api, core
+services/web-api -> (no project dependency declared yet)
+```
+
+`api` depends on no TitanSMP module. `core` must not depend on `paper`, `velocity`, feature modules, or services. Feature modules and platform integrations may depend on the foundation, but must not depend on one another by default. If a feature needs to expose a contract, that contract belongs in `api`.
+
+`modules/discord` is a standalone process while retaining the feature-module dependency direction (`api` and `core`). `services/web-api` has no project dependency configured at this stage, keeping its future service calls separate from direct database access.
+
+These directions are acyclic: foundation contracts sit at the bottom, shared implementation depends on those contracts, and integrations/features depend on the foundation. No database or Redis connections, Discord bot, Web API endpoints, or Minecraft features are implemented in the current structure.
