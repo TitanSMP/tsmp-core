@@ -22,6 +22,7 @@ import de.titansmp.api.chat.ChatMessageSource
 import de.titansmp.api.chat.NetworkChatMessage
 import de.titansmp.api.display.PlayerDisplayMeta
 import de.titansmp.api.display.PlayerDisplayMetaChanged
+import de.titansmp.api.discord.DiscordAccountUnlinked
 import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
@@ -134,5 +135,15 @@ class NetworkEventSerializerTest {
             PlayerDisplayMetaChanged(metadata.copy(eventType = PlayerDisplayMetaChanged.TYPE), player, PlayerDisplayMeta(player, "", "[TITAN]", 0)),
         )
         events.forEach { assertEquals(it, serializer.deserialize(serializer.serialize(EventEnvelope(it))).event) }
+    }
+
+    @Test fun `discord account unlink event round trips uuid name and discord id`() {
+        val event = DiscordAccountUnlinked(
+            metadata.copy(eventType = DiscordAccountUnlinked.TYPE),
+            UUID.randomUUID(),
+            "Henry",
+            424242424242424242L,
+        )
+        assertEquals(event, serializer.deserialize(serializer.serialize(EventEnvelope(event))).event)
     }
 }

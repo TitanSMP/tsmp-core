@@ -1,5 +1,6 @@
 package de.titansmp.core.display
 
+import de.titansmp.api.chat.ChatMessageSource
 import de.titansmp.api.display.PlayerDisplayMeta
 import java.util.UUID
 import kotlin.test.Test
@@ -50,5 +51,14 @@ class PlayerDisplayFormatTest {
         assertEquals("", PlayerDisplayFormat.nameTagPrefix(null))
         assertEquals("", PlayerDisplayFormat.nameTagPrefix(""))
         assertEquals("", PlayerDisplayFormat.nameTagPrefix("   "))
+    }
+
+    @Test
+    fun `source aware chat lines mark discord web and system but never minecraft`() {
+        assertEquals("[Admin] Henry: Hello", PlayerDisplayFormat.chatMessage(ChatMessageSource.MINECRAFT, "[Admin]", "Henry", "Hello"))
+        assertEquals("[Discord] [Admin] Henry: Hello", PlayerDisplayFormat.chatMessage(ChatMessageSource.DISCORD, "[Admin]", "Henry", "Hello"))
+        assertEquals("[Discord] Henry: Hello", PlayerDisplayFormat.chatMessage(ChatMessageSource.DISCORD, null, "Henry", "Hello"))
+        assertEquals("[Web] Henry: Hello", PlayerDisplayFormat.chatMessage(ChatMessageSource.WEB, "", "Henry", "Hello"))
+        assertEquals("[System] Restarting", PlayerDisplayFormat.chatMessage(ChatMessageSource.SYSTEM, "[Admin]", "Henry", "Restarting"))
     }
 }

@@ -24,6 +24,12 @@ commands:
   kick:
     description: Kick an online player from the TitanSMP network
     usage: /kick <player> [reason]
+  link:
+    description: Create a single-use code to link your Minecraft account with a Discord account
+    usage: /link
+  unlink:
+    description: Remove the Discord account linked to your Minecraft account
+    usage: /unlink
 permissions:
   titansmp.enderchest.rows.1:
     description: Grants access to one row of TitanSMP EnderChest storage

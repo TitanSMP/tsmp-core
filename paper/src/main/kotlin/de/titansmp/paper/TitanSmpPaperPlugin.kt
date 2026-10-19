@@ -17,6 +17,9 @@ import de.titansmp.paper.display.PlayerDisplayPaperModule
 import de.titansmp.paper.moderation.ModerationPaperModule
 import de.titansmp.chat.DefaultChatService
 import de.titansmp.paper.chat.ChatPaperModule
+import de.titansmp.core.discord.link.DefaultDiscordLinkService
+import de.titansmp.core.discord.link.JdbcDiscordLinkRepository
+import de.titansmp.paper.discord.DiscordLinkPaperModule
 import net.luckperms.api.LuckPerms
 import net.luckperms.api.util.Tristate
 import org.bukkit.entity.Player
@@ -33,6 +36,7 @@ class TitanSmpPaperPlugin : JavaPlugin() {
     @Volatile private var playerDataModule: PlayerDataPaperModule? = null
     @Volatile private var moderationModule: ModerationPaperModule? = null
     @Volatile private var chatModule: ChatPaperModule? = null
+    @Volatile private var discordModule: DiscordLinkPaperModule? = null
     @Volatile private var displayModule: PlayerDisplayPaperModule? = null
     @Volatile private var displayService: DefaultPlayerDisplayService? = null
     private var displayListener: LuckPermsDisplayListener? = null
@@ -132,6 +136,24 @@ class TitanSmpPaperPlugin : JavaPlugin() {
                             serverIdentity.identity.id,
                             moderationExecutor,
                         ).also { it.register() }
+                        // The Discord bot runtime is a separate process; Paper only shares the linking
+                        // service so players can create and revoke their own link codes in game.
+                        if (startedRuntime.discordConfig.enabled) {
+                            discordModule = DiscordLinkPaperModule(
+                                this,
+                                DefaultDiscordLinkService(
+                                    JdbcDiscordLinkRepository(startedRuntime.databaseDataSource()),
+                                    startedRuntime.eventBus(),
+                                    serverIdentity.identity.id,
+                                    startedRuntime.discordConfig.linking,
+                                    moderationExecutor,
+                                ),
+                                moderationExecutor,
+                                startedRuntime.discordConfig.linking.tokenExpirationMinutes,
+                            ).also { it.register() }
+                        } else {
+                            logger.info("Discord integration is disabled; /link and /unlink are not registered.")
+                        }
                         val persistence = Executors.newSingleThreadExecutor { task ->
                             Thread(task, "titansmp-ender-chest-db").apply { isDaemon = true }
                         }
@@ -185,6 +207,8 @@ class TitanSmpPaperPlugin : JavaPlugin() {
         moderationModule = null
         chatModule?.close()
         chatModule = null
+        discordModule?.close()
+        discordModule = null
         displayModule?.close()
         displayModule = null
         displayListener?.close()

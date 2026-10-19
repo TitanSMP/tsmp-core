@@ -34,4 +34,5 @@ include(
     "modules:scoreboard",
     "modules:discord",
     "services:web-api",
+    "services:discord-bot",
 )

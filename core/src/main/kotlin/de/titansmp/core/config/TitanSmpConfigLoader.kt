@@ -58,6 +58,20 @@ class TitanSmpConfigLoader {
             value(key, variable, default.toString()).toIntOrNull()
                 ?: throw ConfigurationException("Invalid integer for '$key' (or '$variable')")
 
+        fun optional(key: String, variable: String): String? =
+            environment[variable]?.takeIf(String::isNotBlank)?.trim()
+                ?: properties.getProperty(key)?.takeIf(String::isNotBlank)?.trim()
+
+        fun optionalLong(key: String, variable: String): Long? {
+            val raw = optional(key, variable) ?: return null
+            return raw.toLongOrNull() ?: throw ConfigurationException("Invalid integer for '$key' (or '$variable')")
+        }
+
+        fun longValue(key: String, variable: String, default: Long): Long {
+            val raw = optional(key, variable) ?: return default
+            return raw.toLongOrNull() ?: throw ConfigurationException("Invalid integer for '$key' (or '$variable')")
+        }
+
         val identity = ServerIdentity(
             id = value("server.id", "TITANSMP_SERVER_ID"),
             type = value("server.type", "TITANSMP_SERVER_TYPE").toServerType("server.type"),
@@ -93,6 +107,19 @@ class TitanSmpConfigLoader {
                 windowMs = value("chat.rate-limit.window-ms", "TITANSMP_CHAT_WINDOW_MS", "3000").toLongOrNull()
                     ?: throw ConfigurationException("Invalid integer for 'chat.rate-limit.window-ms'"),
                 maxMessageLength = integer("chat.max-message-length", "TITANSMP_CHAT_MAX_MESSAGE_LENGTH", 256),
+            ),
+            discord = DiscordConfig(
+                enabled = value("discord.enabled", "TITANSMP_DISCORD_ENABLED", "false").toBooleanStrictOrConfigError("discord.enabled"),
+                // The bot token is a secret and only read from the environment or the local config file.
+                token = optional("discord.token", "TITANSMP_DISCORD_TOKEN"),
+                guildId = optionalLong("discord.guild-id", "TITANSMP_DISCORD_GUILD_ID"),
+                minecraftChatChannelId = optionalLong("discord.minecraft-chat-channel-id", "TITANSMP_DISCORD_CHAT_CHANNEL_ID"),
+                verifiedRoleId = optionalLong("discord.verified-role-id", "TITANSMP_DISCORD_VERIFIED_ROLE_ID"),
+                linking = DiscordLinkingConfig(
+                    tokenExpirationMinutes = longValue("discord.linking.token-expiration-minutes", "TITANSMP_DISCORD_LINK_TOKEN_EXPIRATION_MINUTES", 10),
+                    maxAttemptsPerWindow = integer("discord.linking.max-attempts-per-window", "TITANSMP_DISCORD_LINK_MAX_ATTEMPTS_PER_WINDOW", 5),
+                    attemptWindowSeconds = integer("discord.linking.attempt-window-seconds", "TITANSMP_DISCORD_LINK_ATTEMPT_WINDOW_SECONDS", 60),
+                ),
             ),
         )
     }

@@ -16,8 +16,9 @@ See [ender-chest.md](ender-chest.md) for the network-wide TitanSMP EnderChest ar
 See [moderation.md](moderation.md) for the network-wide moderation service, LuckPerms permissions and immunity, durable punishment history, Redis propagation, Paper commands, and Velocity ban enforcement.
 See [chat.md](chat.md) for the network chat service, message/event model, moderation and permission checks, Paper integration, rate limits, length validation, and duplicate protection.
 See [display.md](display.md) for the shared player display/meta layer, LuckPerms-backed prefix and weight resolution, the network-wide Velocity TAB list, Paper nametags, chat prefix integration, and clan-suffix preparation.
+See [discord.md](discord.md) for the Discord integration: the dedicated JDA bot runtime, Minecraft/Discord account linking with single-use hashed link codes, the configurable verified role, and the two-way chat bridge between Minecraft and the configured Discord channel. Discord IDs are configuration values and are never hardcoded in source code.
 
-The repository is organized into platform-independent contracts (`api`), shared infrastructure (`core`), platform integrations (`paper` and `velocity`), feature modules under `modules/`, and standalone services under `services/`. Player identity, the independent EnderChest, Data Bridge Phases 1, 1.5, 2, and 3, network moderation, network chat, and the shared player display/TAB layer are implemented. Other feature modules remain structural placeholders. MariaDB is the durable source of truth; Redis carries transfer coordination and network events including ephemeral chat messages and display-meta change notifications.
+The repository is organized into platform-independent contracts (`api`), shared infrastructure (`core`), platform integrations (`paper` and `velocity`), feature modules under `modules/`, and standalone services under `services/`. Player identity, the independent EnderChest, Data Bridge Phases 1, 1.5, 2, and 3, network moderation, network chat, the shared player display/TAB layer, and the Discord integration are implemented. Other feature modules remain structural placeholders. MariaDB is the durable source of truth; Redis carries transfer coordination and network events including ephemeral chat messages and display-meta change notifications.
 
 ## Module inventory
 
@@ -42,10 +43,11 @@ The repository is organized into platform-independent contracts (`api`), shared 
 - `modules/admin-shop`
 - `modules/tab`
 - `modules/scoreboard`
-- `modules/discord` — a standalone service/process, not a Paper plugin
+- `modules/discord` — the JDA-free Discord domain: linking service, JDBC repository, chat relay, command handler, role listener; a Paper plugin never loads it
 
 ### Services
 
 - `services/web-api` — a standalone service for the existing Next.js website; the website must not access MariaDB directly
+- `services/discord-bot` — the dedicated Discord bot runtime (JDA 6.7.0); exactly one instance owns the gateway, no Paper server starts a bot
 
 The Data Bridge is a native TitanSMP implementation informed by the source audit. No upstream source has been copied or forked into this repository. It synchronizes Inventory/Armor/Offhand, Health/Food/Experience, active Potion Effects, and Advancement criterion progress; EnderChest remains isolated in its own module and table. Advancement completion restoration is deferred when Paper would otherwise re-run rewards. Map items remain in the existing serialized inventory; server-managed map content is not currently replicated between independent map registries.

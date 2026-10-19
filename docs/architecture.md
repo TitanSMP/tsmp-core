@@ -24,6 +24,7 @@ modules/
   discord/
 services/
   web-api/
+  discord-bot/
 ```
 
 Kotlin sources use the `de.titansmp` package root. Each module has a corresponding package directory under `src/main/kotlin/de/titansmp/`.
@@ -32,7 +33,7 @@ Kotlin sources use the `de.titansmp` package root. Each module has a correspondi
 
 ### Foundation
 
-- **`api`** contains only public, platform-independent interfaces, DTOs, enums, and contracts. It has no Paper, Bukkit, Velocity, MariaDB, or Redis implementation dependencies. Its server package defines `ServerIdentity`, `ServerType`, `ServerEnvironment`, and `NetworkServer`.
+- **`api`** contains only public, platform-independent interfaces, DTOs, enums, and contracts. It has no Paper, Bukkit, Velocity, MariaDB, Redis, or Discord-library implementation dependencies. Its server package defines `ServerIdentity`, `ServerType`, `ServerEnvironment`, and `NetworkServer`. Its discord package defines the platform-independent account-link contracts; no JDA type appears there.
 - **`core`** contains shared implementations and central services. It owns configuration loading, the MariaDB pool and migration runner, the Redis client, the configured `NetworkServer` implementation, and startup/shutdown lifecycle. Platform-specific code does not belong here.
 - **Player identity**: the public DTO and service contract live in `api`; the service and JDBC repository live in `core` and use the shared MariaDB pool.
 - **Event messaging**: platform-neutral events and `EventBus` contracts live in `api`; core owns the versioned JSON codec, Redis Pub/Sub transport, dispatch, and listener lifecycle. See [event-bus.md](event-bus.md).
@@ -61,11 +62,12 @@ Each feature module encapsulates its own domain and uses shared infrastructure t
 - **`modules/admin-shop`** owns admin shop functionality.
 - **`modules/tab`** owns TAB-related functionality.
 - **`modules/scoreboard`** owns scoreboard functionality.
-- **`modules/discord`** is a standalone service/process. It is not a Paper plugin and is not loaded by the Paper module.
+- **`modules/discord`** owns the platform-independent Discord domain: the account-link service and its rate limiter, the JDBC repository for links and link tokens, the link-code generator/hasher, the chat relay in both directions, the Discord command handler, and the unlink/role listener. Its public contracts (`DiscordLinkService`, the link/token DTOs, `DiscordAccountUnlinked`) live in `api`; Flyway owns the link and token tables. It has no JDA, Paper, Velocity, or LuckPerms dependency, so every linking rule is testable without a gateway. JDA-specific code is confined to `services/discord-bot`.
 
 ### Standalone service
 
 - **`services/web-api`** is a standalone service for the existing Next.js website. The website must not connect directly to MariaDB; the Web API is the intended service boundary for accessing TitanSMP services. No transport or service protocol is selected by this scaffolding.
+- **`services/discord-bot`** is the dedicated Discord runtime built on JDA 6.7.0. Exactly one instance owns the gateway; no Paper server or Velocity proxy starts a bot. It reuses `core` for the MariaDB pool, Flyway migrations, the Redis event bus, and `TitanSmpRuntime` lifecycle. It is the only module allowed to depend on JDA. On startup it resolves the configured guild, chat channel, and verified role before wiring any bridge and fails cleanly when one does not resolve. Discord IDs come from configuration only.
 
 ## Dependency direction
 
@@ -82,16 +84,19 @@ paper     -> api, core, modules/ender-chest, modules/data-bridge
 paper     -> modules/moderation
 paper     -> modules/chat
 paper     -> modules/display
+paper     -> modules/discord
 velocity  -> api, core, modules/data-bridge, modules/ender-chest, modules/moderation
 velocity  -> modules/display
 modules/* -> api, core
 services/web-api -> (no project dependency declared yet)
+services/discord-bot -> api, core, modules/discord, modules/chat, modules/display
+services/discord-bot -> JDA (only module with a Discord library dependency)
 ```
 
 `api` depends on no TitanSMP module. `core` must not depend on `paper`, `velocity`, feature modules, or services. Feature modules and platform integrations may depend on the foundation, but must not depend on one another by default. If a feature needs to expose a contract, that contract belongs in `api`.
 
-`modules/discord` is a standalone process while retaining the feature-module dependency direction (`api` and `core`). `services/web-api` has no project dependency configured at this stage, keeping its future service calls separate from direct database access. The Data Bridge Paper adapter is hosted by the existing root `paper` project; it does not create a second Paper plugin or dependency cycle. Potion Effects and Advancement criterion progress are part of the existing revisioned state and Velocity transfer flow. Potion Effects use stable registry IDs, duration ticks, flags, infinite duration, hidden effect chains, and a capture timestamp. Advancement data stores namespaced keys with per-criterion completion booleans, not definitions. If restoring a completed advancement would execute rewards, the target progress is deferred while the complete canonical saved state remains in the same payload. There is no feature-specific Redis protocol or separate persistence path. Death and respawn do not remove advancements.
+`modules/discord` keeps the feature-module dependency direction (`api` and `core`) and hosts no Discord library; its standalone runtime counterpart is `services/discord-bot`. `services/web-api` has no project dependency configured at this stage, keeping its future service calls separate from direct database access. The Data Bridge Paper adapter is hosted by the existing root `paper` project; it does not create a second Paper plugin or dependency cycle. Potion Effects and Advancement criterion progress are part of the existing revisioned state and Velocity transfer flow. Potion Effects use stable registry IDs, duration ticks, flags, infinite duration, hidden effect chains, and a capture timestamp. Advancement data stores namespaced keys with per-criterion completion booleans, not definitions. If restoring a completed advancement would execute rewards, the target progress is deferred while the complete canonical saved state remains in the same payload. There is no feature-specific Redis protocol or separate persistence path. Death and respawn do not remove advancements.
 
-These directions are acyclic: foundation contracts sit at the bottom, shared implementation depends on those contracts, and integrations/features depend on the foundation. Database and Redis connections are implemented only in `core`; feature modules reuse them. See [player-identity.md](player-identity.md), [ender-chest.md](ender-chest.md), [data-bridge.md](data-bridge.md), [moderation.md](moderation.md), [chat.md](chat.md), and [display.md](display.md) for implemented service boundaries. Chat, moderation, and display do not create another connection or event bus.
+These directions are acyclic: foundation contracts sit at the bottom, shared implementation depends on those contracts, and integrations/features depend on the foundation. Database and Redis connections are implemented only in `core`; feature modules reuse them. See [player-identity.md](player-identity.md), [ender-chest.md](ender-chest.md), [data-bridge.md](data-bridge.md), [moderation.md](moderation.md), [chat.md](chat.md), [display.md](display.md), and [discord.md](discord.md) for implemented service boundaries. Chat, moderation, display, and Discord do not create another connection or event bus; the Discord bot subscribes to the existing `EventBus`.
 
 Player inventory map items use Paper's shared opaque item codec, but their referenced map assets and `MapView` state remain server-managed. The Paper 26.3 API does not expose a complete safe map-content export/import contract, and map IDs are not defined as network-global. TitanSMP does not put map pixels in `PlayerState`, remap IDs, or serialize plugin renderers. See [map-sync.md](map-sync.md) for the API analysis and limitations.

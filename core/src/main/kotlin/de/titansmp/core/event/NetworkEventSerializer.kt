@@ -28,6 +28,7 @@ import de.titansmp.api.chat.ChatMessageSource
 import de.titansmp.api.chat.NetworkChatMessage
 import de.titansmp.api.display.PlayerDisplayMeta
 import de.titansmp.api.display.PlayerDisplayMetaChanged
+import de.titansmp.api.discord.DiscordAccountUnlinked
 import java.time.Instant
 import java.util.UUID
 
@@ -94,6 +95,7 @@ class NetworkEventSerializer(
             PlayerTransferTargetPrepared.TYPE -> PlayerTransferTargetPrepared(metadata, payload.uuid("transferId"), payload.uuid("playerUuid"), payload.text("sourceServerId"), payload.text("targetServerId"), payload.instant("timestamp"))
             PlayerTransferFailed.TYPE -> PlayerTransferFailed(metadata, payload.uuid("transferId"), payload.uuid("playerUuid"), payload.text("sourceServerId"), payload.text("targetServerId"), payload.text("reason"), payload.instant("timestamp"))
             PlayerTransferCompleted.TYPE -> PlayerTransferCompleted(metadata, payload.uuid("transferId"), payload.uuid("playerUuid"), payload.text("sourceServerId"), payload.text("targetServerId"), payload.path("stateRevision").longValue(), payload.instant("timestamp"))
+            DiscordAccountUnlinked.TYPE -> DiscordAccountUnlinked(metadata, payload.uuid("playerUuid"), payload.text("playerName"), payload.path("discordUserId").longValue())
             else -> throw UnknownEventTypeException(type)
         }
         return EventEnvelope(event)
@@ -162,6 +164,11 @@ class NetworkEventSerializer(
                 node.put("transferId", event.transferId.toString()); node.put("playerUuid", event.playerUuid.toString())
                 node.put("sourceServerId", event.sourceServerId); node.put("targetServerId", event.targetServerId)
                 node.put("stateRevision", event.stateRevision); node.put("timestamp", event.timestamp.toString())
+            }
+            is DiscordAccountUnlinked -> {
+                node.put("playerUuid", event.playerUuid.toString())
+                node.put("playerName", event.playerName)
+                node.put("discordUserId", event.discordUserId)
             }
             else -> throw UnsupportedEventTypeException(event.metadata.eventType)
         }

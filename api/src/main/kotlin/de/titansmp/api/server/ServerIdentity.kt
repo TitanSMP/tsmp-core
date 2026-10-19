@@ -15,6 +15,9 @@ enum class ServerType {
     LOBBY,
     SMP,
     BEDWARS,
+
+    /** A standalone network service such as the dedicated Discord bot, not a Minecraft server. */
+    DISCORD,
 }
 
 enum class ServerEnvironment {

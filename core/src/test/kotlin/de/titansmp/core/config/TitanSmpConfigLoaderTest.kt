@@ -65,6 +65,92 @@ class TitanSmpConfigLoaderTest {
     }
 
     @Test
+    fun `discord integration is disabled by default and needs no credentials`() {
+        val configuration = TitanSmpConfigLoader().load(writeConfig(), emptyMap())
+
+        assertFalse(configuration.discord.enabled)
+        assertNull(configuration.discord.token)
+        assertNull(configuration.discord.guildId)
+        assertNull(configuration.discord.minecraftChatChannelId)
+        assertNull(configuration.discord.verifiedRoleId)
+        assertEquals(10L, configuration.discord.linking.tokenExpirationMinutes)
+        assertEquals(5, configuration.discord.linking.maxAttemptsPerWindow)
+        assertEquals(60, configuration.discord.linking.attemptWindowSeconds)
+    }
+
+    @Test
+    fun `reads discord settings from the file and lets the environment override the token`() {
+        val file = writeConfig()
+        Files.writeString(
+            file,
+            Files.readString(file) + "\n" + """
+                discord.enabled=true
+                discord.token=file-token
+                discord.guild-id=111
+                discord.minecraft-chat-channel-id=222
+                discord.verified-role-id=333
+                discord.linking.token-expiration-minutes=20
+                discord.linking.max-attempts-per-window=3
+                discord.linking.attempt-window-seconds=120
+            """.trimIndent() + "\n",
+        )
+
+        val configuration = TitanSmpConfigLoader().load(file, mapOf("TITANSMP_DISCORD_TOKEN" to "environment-token"))
+        val discord = configuration.discord
+
+        assertTrue(discord.enabled)
+        assertEquals("environment-token", discord.token)
+        assertEquals(111L, discord.guildId)
+        assertEquals(222L, discord.minecraftChatChannelId)
+        assertEquals(333L, discord.verifiedRoleId)
+        assertEquals(20L, discord.linking.tokenExpirationMinutes)
+        assertEquals(3, discord.linking.maxAttemptsPerWindow)
+        assertEquals(120, discord.linking.attemptWindowSeconds)
+
+        val botSettings = discord.requireBotSettings()
+        assertEquals("environment-token", botSettings.token)
+        assertEquals(111L, botSettings.guildId)
+        assertEquals(222L, botSettings.minecraftChatChannelId)
+        assertEquals(333L, botSettings.verifiedRoleId)
+    }
+
+    @Test
+    fun `the bot token is never exposed by toString`() {
+        val file = writeConfig()
+        Files.writeString(file, Files.readString(file) + "\ndiscord.enabled=true\ndiscord.token=super-secret-token\n")
+
+        val configuration = TitanSmpConfigLoader().load(file, emptyMap())
+
+        assertFalse(configuration.toString().contains("super-secret-token"))
+        assertFalse(configuration.discord.toString().contains("super-secret-token"))
+        assertTrue(configuration.discord.toString().contains("token=<redacted>"))
+    }
+
+    @Test
+    fun `an enabled discord integration without ids fails cleanly instead of starting half a bot`() {
+        val file = writeConfig()
+        Files.writeString(file, Files.readString(file) + "\ndiscord.enabled=true\ndiscord.token=token\n")
+
+        val discord = TitanSmpConfigLoader().load(file, emptyMap()).discord
+        val failure = assertFailsWith<ConfigurationException> { discord.requireBotSettings() }
+        assertTrue(failure.message!!.contains("discord.guild-id"))
+    }
+
+    @Test
+    fun `requireBotSettings refuses a disabled integration`() {
+        val configuration = TitanSmpConfigLoader().load(writeConfig(), emptyMap())
+
+        assertFailsWith<ConfigurationException> { configuration.discord.requireBotSettings() }
+    }
+
+    @Test
+    fun `rejects invalid discord identifiers`() {
+        val file = writeConfig()
+        Files.writeString(file, Files.readString(file) + "\ndiscord.enabled=true\ndiscord.guild-id=zero\n")
+        assertFailsWith<ConfigurationException> { TitanSmpConfigLoader().load(file, emptyMap()) }
+    }
+
+    @Test
     fun `allows redis without a password`() {
         val configuration = TitanSmpConfigLoader().load(writeConfig(), emptyMap())
 

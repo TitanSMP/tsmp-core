@@ -25,9 +25,9 @@ class ChatPaperModule(
     private val eventBus: EventBus,
     private val serverId: String,
     private val executor: java.util.concurrent.Executor,
+    // Renders by source, so Discord, web, and system lines are marked while Minecraft lines stay plain.
     private val renderer: ChatRenderer = ChatRenderer { message ->
-        if (message.source == de.titansmp.api.chat.ChatMessageSource.SYSTEM) "[System] ${message.message}"
-        else PlayerDisplayFormat.chatMessage(message.prefix, message.senderName, message.message)
+        PlayerDisplayFormat.chatMessage(message.source, message.prefix, message.senderName, message.message)
     },
     private val receivedIds: de.titansmp.chat.RecentChatMessageCache = de.titansmp.chat.RecentChatMessageCache(),
 ) : Listener, AutoCloseable {

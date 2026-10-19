@@ -5,6 +5,7 @@ import de.titansmp.api.event.EventBus
 import de.titansmp.api.server.NetworkServer
 import de.titansmp.core.config.DatabaseConfig
 import de.titansmp.core.config.ChatConfig
+import de.titansmp.core.config.DiscordConfig
 import de.titansmp.core.config.RedisConfig
 import de.titansmp.core.config.TitanSmpConfig
 import de.titansmp.core.config.TitanSmpConfigLoader
@@ -51,6 +52,8 @@ class TitanSmpRuntime(
         private set
     @Volatile var chatConfig: ChatConfig = ChatConfig()
         private set
+    @Volatile var discordConfig: DiscordConfig = DiscordConfig()
+        private set
 
     /** Stateless facade over the same shared database pool used by every core repository. */
     fun playerService(): PlayerService {
@@ -79,6 +82,7 @@ class TitanSmpRuntime(
             val configuration = configLoader()
             playerTransferTimeoutMs = configuration.playerTransferTimeoutMs
             chatConfig = configuration.chat
+            discordConfig = configuration.discord
             val server = ConfiguredNetworkServer(configuration.serverIdentity, configuration.networkName)
             networkServer = server
             logger.info(

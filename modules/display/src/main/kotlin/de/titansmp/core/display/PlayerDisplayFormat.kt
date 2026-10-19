@@ -1,5 +1,6 @@
 package de.titansmp.core.display
 
+import de.titansmp.api.chat.ChatMessageSource
 import de.titansmp.api.display.PlayerDisplayMeta
 
 /**
@@ -22,6 +23,22 @@ object PlayerDisplayFormat {
 
     /** Chat rule: `prefix + name: message`, never the clan suffix. */
     fun chatMessage(prefix: String?, name: String, message: String): String = nameTag(prefix, name) + ": " + message
+
+    /**
+     * Source-aware chat rule.
+     *
+     * Minecraft-originated messages render with the plain chat rule. Discord, web, and system messages
+     * carry a small marker so players can always tell where a line came from. The marker lives here and
+     * not in an individual renderer so every platform renders a source in the same way.
+     *
+     * Examples: `[Discord] [Admin] Henry: Hi`, `[Web] Henry: Hi`, `[System] Restarting in 5 minutes`.
+     */
+    fun chatMessage(source: ChatMessageSource, prefix: String?, name: String, message: String): String = when (source) {
+        ChatMessageSource.MINECRAFT -> chatMessage(prefix, name, message)
+        ChatMessageSource.DISCORD -> "[Discord] " + chatMessage(prefix, name, message)
+        ChatMessageSource.WEB -> "[Web] " + chatMessage(prefix, name, message)
+        ChatMessageSource.SYSTEM -> "[System] $message"
+    }
 
     /**
      * Paper scoreboard-team prefix for the nametag rule. The client renders the player name directly after

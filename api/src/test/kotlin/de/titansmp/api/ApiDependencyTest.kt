@@ -8,7 +8,7 @@ import kotlin.test.assertTrue
 
 /**
  * Guards the `api` module contract: it must only contain platform-independent contracts and must never
- * reference Paper, Velocity, LuckPerms, Redis, MariaDB, Flyway, or PlaceholderAPI.
+ * reference Paper, Velocity, LuckPerms, Redis, MariaDB, Flyway, PlaceholderAPI, or JDA.
  */
 class ApiDependencyTest {
     private val forbiddenMarkers = listOf(
@@ -21,6 +21,7 @@ class ApiDependencyTest {
         "com/zaxxer",           // HikariCP
         "org/flywaydb",        // Flyway
         "me/clip",             // PlaceholderAPI
+        "net/dv8tion/jda",     // JDA (Discord)
     )
 
     @Test
