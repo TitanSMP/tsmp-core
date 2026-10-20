@@ -125,6 +125,10 @@ class TitanSmpConfigLoader {
             ),
             serverTransfer = loadServerTransfer(properties, environment),
             stats = loadStats(properties, environment),
+            friends = FriendsConfig(
+                enabled = value("friends.enabled", "TITANSMP_FRIENDS_ENABLED", "true").toBooleanStrictOrConfigError("friends.enabled"),
+                pageSize = integer("friends.page-size", "TITANSMP_FRIENDS_PAGE_SIZE", 10),
+            ),
         )
     }
 

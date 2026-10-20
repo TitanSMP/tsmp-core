@@ -14,6 +14,7 @@ dependencies {
     implementation(project(":modules:economy"))
     implementation(project(":modules:server-transfer"))
     implementation(project(":modules:stats"))
+    implementation(project(":modules:friends"))
     compileOnly("io.papermc.paper:paper-api:26.3.build.205-stable")
     compileOnly("net.luckperms:api:5.5")
 
@@ -46,4 +47,5 @@ tasks.jar {
     from(project(":modules:economy").the<SourceSetContainer>()["main"].output)
     from(project(":modules:server-transfer").the<SourceSetContainer>()["main"].output)
     from(project(":modules:stats").the<SourceSetContainer>()["main"].output)
+    from(project(":modules:friends").the<SourceSetContainer>()["main"].output)
 }

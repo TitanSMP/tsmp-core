@@ -23,6 +23,7 @@ modules/
   tab/
   scoreboard/
   discord/
+  friends/
 services/
   web-api/
   discord-bot/
@@ -113,3 +114,7 @@ services/discord-bot -> JDA (only module with a Discord library dependency)
 These directions are acyclic: foundation contracts sit at the bottom, shared implementation depends on those contracts, and integrations/features depend on the foundation. Database and Redis connections are implemented only in `core`; feature modules reuse them. See [player-identity.md](player-identity.md), [ender-chest.md](ender-chest.md), [data-bridge.md](data-bridge.md), [moderation.md](moderation.md), [chat.md](chat.md), [display.md](display.md), [economy.md](economy.md), [server-transfer.md](server-transfer.md), [stats.md](stats.md), and [discord.md](discord.md) for implemented service boundaries. Chat, moderation, display, economy, server transfer, statistics, and Discord do not create another connection or event bus; the Discord bot subscribes to the existing `EventBus`. Velocity and the Discord bot load `modules:economy` and `modules:stats` at runtime only so the V6 economy and V7 stats Flyway migrations are visible; they do not expose economy or statistics commands. `modules:server-transfer` creates no database table: queues and reservations live only in Redis and reuse the existing `EventBus`. `modules:stats` adds no new connection pool and no second event bus; statistics counters are batched locally and written to the shared MariaDB pool off the game thread.
 
 Player inventory map items use Paper's shared opaque item codec, but their referenced map assets and `MapView` state remain server-managed. The Paper 26.3 API does not expose a complete safe map-content export/import contract, and map IDs are not defined as network-global. TitanSMP does not put map pixels in `PlayerState`, remap IDs, or serialize plugin renderers. See [map-sync.md](map-sync.md) for the API analysis and limitations.
+
+## Friends
+
+The new `modules:friends` feature stores canonical UUID friendships, directed requests, and directed blocks in MariaDB V8. Its Paper command surface is network-wide through the shared player identity service and EventBus; pair locks serialize mutations across backends. See [friends.md](friends.md).

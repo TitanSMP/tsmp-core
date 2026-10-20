@@ -5,6 +5,7 @@ This directory contains architecture and infrastructure documentation for the Ti
 ## Architecture
 
 See [architecture.md](architecture.md) for the current module layout, module responsibilities, and allowed dependency directions.
+See [friends.md](friends.md) for the network-wide friends model, commands, persistence, events, and notifications.
 
 See [infrastructure.md](infrastructure.md) for configuration, MariaDB, Flyway migrations, Redis, server identity, lifecycle, and operations guidance.
 See [player-identity.md](player-identity.md) for UUID-based player identity, persistence, platform lifecycle, and concurrency constraints.
@@ -55,3 +56,5 @@ The repository is organized into platform-independent contracts (`api`), shared 
 - `services/discord-bot` — the dedicated Discord bot runtime (JDA 6.7.0); exactly one instance owns the gateway, no Paper server starts a bot
 
 The Data Bridge is a native TitanSMP implementation informed by the source audit. No upstream source has been copied or forked into this repository. It synchronizes Inventory/Armor/Offhand, Health/Food/Experience, active Potion Effects, and Advancement criterion progress; EnderChest remains isolated in its own module and table. Advancement completion restoration is deferred when Paper would otherwise re-run rewards. Map items remain in the existing serialized inventory; server-managed map content is not currently replicated between independent map registries.
+
+See [friends.md](friends.md) for the network-wide friends feature.

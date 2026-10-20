@@ -15,6 +15,7 @@ class TitanSmpConfig(
     val discord: DiscordConfig = DiscordConfig(),
     val serverTransfer: ServerTransferConfig = ServerTransferConfig(),
     val stats: StatsConfig = StatsConfig(),
+    val friends: FriendsConfig = FriendsConfig(),
 ) {
     init {
         require(networkName.isNotBlank()) { "Network name must not be blank" }
@@ -24,6 +25,10 @@ class TitanSmpConfig(
 
     override fun toString(): String =
         "TitanSmpConfig(serverIdentity=$serverIdentity, networkName=$networkName, database=<redacted>, redis=<redacted>, playerTransferTimeoutMs=$playerTransferTimeoutMs, chat=$chat, discord=$discord, serverTransfer=$serverTransfer, stats=$stats)"
+}
+
+data class FriendsConfig(val enabled: Boolean = true, val pageSize: Int = 10) {
+    init { require(pageSize in 1..100) { "friends.page-size must be between 1 and 100" } }
 }
 
 data class ChatConfig(

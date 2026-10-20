@@ -46,6 +46,10 @@ commands:
     description: Give, take, or set TitanCoins
     usage: /eco <give|take|set> <player> <amount>
     aliases: [economy]
+  friends:
+    description: Manage your network friends
+    usage: /friends [add|accept|reject|remove|block|unblock|requests|list]
+    aliases: [friend]
 permissions:
   titansmp.enderchest.rows.1:
     description: Grants access to one row of TitanSMP EnderChest storage

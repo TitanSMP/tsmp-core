@@ -32,6 +32,9 @@ import de.titansmp.core.stats.PlaytimeTracker
 import de.titansmp.core.stats.StatsAggregator
 import de.titansmp.core.stats.StatsTrackingPolicy
 import de.titansmp.paper.stats.StatsPaperModule
+import de.titansmp.core.friends.DefaultFriendsService
+import de.titansmp.core.friends.JdbcFriendsRepository
+import de.titansmp.paper.friends.FriendsPaperModule
 import net.luckperms.api.LuckPerms
 import net.luckperms.api.util.Tristate
 import org.bukkit.entity.Player
@@ -55,6 +58,7 @@ class TitanSmpPaperPlugin : JavaPlugin() {
     @Volatile private var economyModule: EconomyPaperModule? = null
     @Volatile private var serverQueueModule: ServerQueuePaperModule? = null
     @Volatile private var statsModule: StatsPaperModule? = null
+    @Volatile private var friendsModule: FriendsPaperModule? = null
     @Volatile private var moderationPersistence: java.util.concurrent.ExecutorService? = null
     @Volatile private var economyPersistence: java.util.concurrent.ExecutorService? = null
     @Volatile private var statsPersistence: java.util.concurrent.ExecutorService? = null
@@ -211,6 +215,18 @@ class TitanSmpPaperPlugin : JavaPlugin() {
                             serverIdentity.identity.id,
                             moderationExecutor,
                         ).also { it.register() }
+                        if (startedRuntime.friendsConfig.enabled) {
+                            val repository = JdbcFriendsRepository(startedRuntime.databaseDataSource())
+                            friendsModule = FriendsPaperModule(
+                                this,
+                                DefaultFriendsService(repository, startedRuntime.eventBus(), moderationExecutor, serverIdentity.identity.id),
+                                repository,
+                                startedRuntime.playerService(),
+                                startedRuntime.eventBus(),
+                                startedRuntime.friendsConfig.pageSize,
+                                moderationExecutor,
+                            ).also { it.register() }
+                        }
                         // The Discord bot runtime is a separate process; Paper only shares the linking
                         // service so players can create and revoke their own link codes in game.
                         if (startedRuntime.discordConfig.enabled) {
@@ -282,6 +298,8 @@ class TitanSmpPaperPlugin : JavaPlugin() {
         moderationModule = null
         chatModule?.close()
         chatModule = null
+        friendsModule?.close()
+        friendsModule = null
         discordModule?.close()
         discordModule = null
         economyModule?.close()

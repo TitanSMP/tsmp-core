@@ -40,6 +40,7 @@ import de.titansmp.api.servertransfer.ServerQueueTransferStarted
 import de.titansmp.api.servertransfer.ServerQueueUpdated
 import de.titansmp.api.stats.PlayerStats
 import de.titansmp.api.stats.PlayerStatsUpdated
+import de.titansmp.api.friends.*
 import java.time.Instant
 import java.util.UUID
 
@@ -75,6 +76,12 @@ class NetworkEventSerializer(
         val payload = root.path("payload")
         val event = when (type) {
             PlayerConnected.TYPE -> PlayerConnected(metadata, payload.uuid("playerId"), payload.text("username"), payload.text("serverId"))
+            FriendRequestCreated.TYPE -> FriendRequestCreated(metadata, payload.uuid("requesterUuid"), payload.uuid("targetUuid"), payload.text("requesterName"))
+            FriendRequestAccepted.TYPE -> FriendRequestAccepted(metadata, payload.uuid("playerUuid"), payload.uuid("requesterUuid"))
+            FriendRequestRejected.TYPE -> FriendRequestRejected(metadata, payload.uuid("playerUuid"), payload.uuid("requesterUuid"))
+            FriendRemoved.TYPE -> FriendRemoved(metadata, payload.uuid("playerUuid"), payload.uuid("friendUuid"))
+            FriendBlocked.TYPE -> FriendBlocked(metadata, payload.uuid("blockerUuid"), payload.uuid("blockedUuid"))
+            FriendUnblocked.TYPE -> FriendUnblocked(metadata, payload.uuid("blockerUuid"), payload.uuid("blockedUuid"))
             PlayerDisconnected.TYPE -> PlayerDisconnected(metadata, payload.uuid("playerId"), payload.text("serverId"))
             PlayerServerChanged.TYPE -> PlayerServerChanged(metadata, payload.uuid("playerId"), payload.text("previousServerId"), payload.text("newServerId"))
             PlayerBanned.TYPE -> PlayerBanned(metadata, payload.uuid("targetId"), payload.text("targetName"), payload.uuid("actionId"), payload.nullableUuid("actorId"), payload.text("actorName"), payload.text("reason"), payload.instant("createdAt"), payload.nullableInstant("expiresAt"), payload.text("serverId"))
@@ -182,6 +189,12 @@ class NetworkEventSerializer(
     private fun payload(envelope: EventEnvelope): ObjectNode {
         val node = mapper.createObjectNode()
         when (val event = envelope.event) {
+            is FriendRequestCreated -> { node.put("requesterUuid", event.requesterUuid.toString()); node.put("targetUuid", event.targetUuid.toString()); node.put("requesterName", event.requesterName) }
+            is FriendRequestAccepted -> { node.put("playerUuid", event.playerUuid.toString()); node.put("requesterUuid", event.requesterUuid.toString()) }
+            is FriendRequestRejected -> { node.put("playerUuid", event.playerUuid.toString()); node.put("requesterUuid", event.requesterUuid.toString()) }
+            is FriendRemoved -> { node.put("playerUuid", event.playerUuid.toString()); node.put("friendUuid", event.friendUuid.toString()) }
+            is FriendBlocked -> { node.put("blockerUuid", event.blockerUuid.toString()); node.put("blockedUuid", event.blockedUuid.toString()) }
+            is FriendUnblocked -> { node.put("blockerUuid", event.blockerUuid.toString()); node.put("blockedUuid", event.blockedUuid.toString()) }
             is PlayerConnected -> {
                 node.put("playerId", event.playerId.toString())
                 node.put("username", event.username)

@@ -3,6 +3,7 @@ package de.titansmp.core.event
 import de.titansmp.api.event.EventEnvelope
 import de.titansmp.api.event.EventMetadata
 import de.titansmp.api.event.EventType
+import de.titansmp.api.friends.*
 import de.titansmp.api.databridge.PlayerStateUpdated
 import de.titansmp.api.databridge.PlayerTransferPrepare
 import de.titansmp.api.databridge.PlayerTransferReady
@@ -57,6 +58,21 @@ class NetworkEventSerializerTest {
         assertEquals(metadata.eventType, decoded.metadata.eventType)
         assertEquals(metadata.timestamp, decoded.metadata.timestamp)
         assertEquals(metadata.sourceServerId, decoded.metadata.sourceServerId)
+    }
+
+    @Test
+    fun `friend events round trip`() {
+        val alice = UUID.randomUUID()
+        val bob = UUID.randomUUID()
+        val events = listOf(
+            FriendRequestCreated(metadata.copy(eventType = FriendRequestCreated.TYPE), alice, bob, "Alice"),
+            FriendRequestAccepted(metadata.copy(eventType = FriendRequestAccepted.TYPE), bob, alice),
+            FriendRequestRejected(metadata.copy(eventType = FriendRequestRejected.TYPE), bob, alice),
+            FriendRemoved(metadata.copy(eventType = FriendRemoved.TYPE), alice, bob),
+            FriendBlocked(metadata.copy(eventType = FriendBlocked.TYPE), alice, bob),
+            FriendUnblocked(metadata.copy(eventType = FriendUnblocked.TYPE), alice, bob),
+        )
+        events.forEach { assertEquals(it, serializer.deserialize(serializer.serialize(EventEnvelope(it))).event) }
     }
 
     @Test
