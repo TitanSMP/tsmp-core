@@ -25,9 +25,12 @@ dependencies {
 
 tasks.jar {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    // The runtime classpath is expanded inside the from closure below, which hides project
+    // artifact producers from Gradle's task dependency inference. Build those artifacts first.
+    dependsOn(configurations.runtimeClasspath.get().buildDependencies)
     from({
-        configurations.runtimeClasspath.get().flatMap { dependency ->
-            if (dependency.isDirectory) listOf(dependency) else zipTree(dependency).files
+        configurations.runtimeClasspath.get().map { dependency ->
+            if (dependency.isDirectory) dependency else zipTree(dependency)
         }
     })
 }
