@@ -3,6 +3,7 @@ package de.titansmp.core.config
 import de.titansmp.api.server.ServerEnvironment
 import de.titansmp.api.server.ServerIdentity
 import de.titansmp.api.server.ServerType
+import de.titansmp.api.economy.Money
 
 class TitanSmpConfig(
     val serverIdentity: ServerIdentity,
@@ -19,6 +20,7 @@ class TitanSmpConfig(
     val clans: ClansConfig = ClansConfig(),
     val teleport: TeleportConfig = TeleportConfig(),
     val auctionHouse: AuctionHouseConfig = AuctionHouseConfig(),
+    val shop: ShopConfig = ShopConfig(),
 ) {
     init {
         require(networkName.isNotBlank()) { "Network name must not be blank" }
@@ -47,6 +49,52 @@ data class AuctionHouseConfig(
         require(sellFeePercent in 0..100) { "auction-house.sell-fee-percent must be between 0 and 100" }
         require(aliases.all { it.matches(Regex("[a-z][a-z0-9_-]{0,31}")) } && aliases.distinct().size == aliases.size) {
             "auction-house.aliases must contain unique lowercase command names"
+        }
+    }
+}
+
+data class ShopItemConfig(
+    val id: String,
+    val material: String,
+    val slot: Int,
+    val amount: Int,
+    val displayName: String,
+    val buyPrice: Money?,
+    val sellPrice: Money?,
+)
+
+data class ShopCategoryConfig(
+    val id: String,
+    val displayName: String,
+    val icon: String,
+    val slot: Int,
+    val enabled: Boolean,
+    val items: List<ShopItemConfig>,
+)
+
+data class ShopConfig(val enabled: Boolean = true, val categories: List<ShopCategoryConfig> = emptyList()) {
+    init {
+        require(categories.map { it.id.lowercase() }.distinct().size == categories.size) { "Shop category IDs must be unique (case-insensitive)" }
+        require(categories.all { it.id.matches(Regex("[a-z0-9][a-z0-9_-]{0,63}")) }) { "Shop category IDs must be lowercase identifiers" }
+        require(categories.map { it.slot }.distinct().size == categories.size && categories.all { it.slot in 0..44 }) { "Shop category slots must be unique and between 0 and 44" }
+        categories.forEach { category ->
+            require(category.displayName.isNotBlank() && category.icon.isNotBlank()) { "Shop category '${category.id}' requires a display name and icon" }
+            require(category.items.map { it.id.lowercase() }.distinct().size == category.items.size) { "Shop item IDs must be unique in category '${category.id}'" }
+            require(category.items.all { it.id.matches(Regex("[a-z0-9][a-z0-9_-]{0,63}")) }) { "Shop item IDs must be lowercase identifiers in category '${category.id}'" }
+            require(category.items.all { it.slot in 0..44 }) { "Shop item slots must be between 0 and 44 in category '${category.id}'" }
+            category.items.sortedBy { it.id }.chunked(45).forEach { page ->
+                require(page.map { it.slot }.distinct().size == page.size) { "Shop item slots must be unique within each page in category '${category.id}'" }
+            }
+            category.items.forEach { item ->
+                require(item.material.isNotBlank()) { "Shop item '${category.id}.${item.id}' requires a material" }
+                require(item.amount in 1..64) { "Shop item '${category.id}.${item.id}' amount must be between 1 and 64" }
+                require(item.displayName.isNotBlank()) { "Shop item '${category.id}.${item.id}' requires a display name" }
+                require(item.buyPrice != null || item.sellPrice != null) { "Shop item '${category.id}.${item.id}' must have a buy-price or sell-price" }
+                require(item.buyPrice?.isNonNegative() != false && item.sellPrice?.isNonNegative() != false) { "Shop item '${category.id}.${item.id}' prices cannot be negative" }
+                require(item.buyPrice?.minorUnits?.let { it <= Long.MAX_VALUE / 64 } != false && item.sellPrice?.minorUnits?.let { it <= Long.MAX_VALUE / 64 } != false) {
+                    "Shop item '${category.id}.${item.id}' price is too large to multiply by a selected quantity"
+                }
+            }
         }
     }
 }

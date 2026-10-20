@@ -95,6 +95,52 @@ class TitanSmpConfigLoaderTest {
         assertFailsWith<IllegalArgumentException>{TitanSmpConfigLoader().load(file,emptyMap())}
     }
 
+    @Test fun `loads configurable shop categories and exact prices`() {
+        val file=writeConfig()
+        Files.writeString(file,Files.readString(file)+"""
+            shop.enabled=true
+            shop.categories.food.display-name=Food
+            shop.categories.food.icon=COOKED_BEEF
+            shop.categories.food.slot=20
+            shop.categories.food.items.steak.material=COOKED_BEEF
+            shop.categories.food.items.steak.amount=16
+            shop.categories.food.items.steak.display-name=Steak
+            shop.categories.food.items.steak.slot=10
+            shop.categories.food.items.steak.buy-price=100.00
+            shop.categories.food.items.steak.sell-price=null
+        """.trimIndent())
+        val shop=TitanSmpConfigLoader().load(file,emptyMap()).shop
+        assertTrue(shop.enabled)
+        assertEquals("food",shop.categories.single().id)
+        assertEquals("COOKED_BEEF",shop.categories.single().items.single().material)
+        assertEquals(16,shop.categories.single().items.single().amount)
+        assertEquals(10_000L,shop.categories.single().items.single().buyPrice?.minorUnits)
+        assertNull(shop.categories.single().items.single().sellPrice)
+    }
+
+    @Test fun `rejects invalid shop item price slot amount and duplicate slots`() {
+        val file=writeConfig()
+        val base="""
+            shop.categories.food.display-name=Food
+            shop.categories.food.icon=COOKED_BEEF
+            shop.categories.food.slot=20
+            shop.categories.food.items.steak.material=COOKED_BEEF
+            shop.categories.food.items.steak.amount=16
+            shop.categories.food.items.steak.display-name=Steak
+            shop.categories.food.items.steak.slot=10
+            shop.categories.food.items.steak.buy-price=1.00
+        """.trimIndent()
+        listOf(
+            base.replace("buy-price=1.00","buy-price=-1.00"),
+            base.replace("slot=10","slot=45"),
+            base.replace("amount=16","amount=0"),
+            base+"\nshop.categories.food.items.apple.material=APPLE\nshop.categories.food.items.apple.amount=1\nshop.categories.food.items.apple.display-name=Apple\nshop.categories.food.items.apple.slot=10\nshop.categories.food.items.apple.buy-price=1.00",
+        ).forEach { contents ->
+            Files.writeString(file,Files.readString(writeConfig())+"\n"+contents)
+            assertFailsWith<IllegalArgumentException> { TitanSmpConfigLoader().load(file,emptyMap()) }
+        }
+    }
+
     @Test
     fun `discord integration is disabled by default and needs no credentials`() {
         val configuration = TitanSmpConfigLoader().load(writeConfig(), emptyMap())

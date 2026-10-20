@@ -35,6 +35,8 @@ Kotlin sources use the `de.titansmp` package root. Each module has a correspondi
 
 The Auction House uses the shared MariaDB pool for listing and claim storage (Flyway V11), the shared EconomyService/Money API for TitanCoins, LuckPerms for sell/limit grants, and the existing Redis EventBus for compact auction invalidations. ItemStack serialization remains in the Paper adapter. Purchases use a recoverable `PURCHASING` state and stable economy transaction ID so a restart can resume without charging twice.
 
+The Admin Shop uses configurable category/item definitions and V12 MariaDB category-state/audit tables. Paper uses the shared EconomyService/Money API and LuckPerms permissions. Category state is committed before its invalidation event is published to the shared Redis EventBus; every open/trade also reads MariaDB so missed events reconcile without making Redis a source of truth.
+
 ## Responsibilities
 
 ### Foundation

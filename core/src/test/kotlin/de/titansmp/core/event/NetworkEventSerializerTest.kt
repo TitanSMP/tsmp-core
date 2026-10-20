@@ -7,6 +7,7 @@ import de.titansmp.api.friends.*
 import de.titansmp.api.clans.*
 import de.titansmp.api.teleport.*
 import de.titansmp.api.auctionhouse.*
+import de.titansmp.api.shop.ShopCategoryStateChanged
 import de.titansmp.api.databridge.PlayerStateUpdated
 import de.titansmp.api.databridge.PlayerTransferPrepare
 import de.titansmp.api.databridge.PlayerTransferReady
@@ -284,5 +285,10 @@ class NetworkEventSerializerTest {
             AuctionItemClaimed(metadata.copy(eventType=AuctionItemClaimed.TYPE),UUID.randomUUID(),seller,AuctionItemKind.EXPIRED),
         )
         events.forEach { event->assertEquals(event,serializer.deserialize(serializer.serialize(EventEnvelope(event))).event) }
+    }
+
+    @Test fun `shop category state event round trips`() {
+        val event=ShopCategoryStateChanged(metadata.copy(eventType=ShopCategoryStateChanged.TYPE),"food",false,UUID.randomUUID(),Instant.parse("2026-10-21T12:00:00Z"))
+        assertEquals(event,serializer.deserialize(serializer.serialize(EventEnvelope(event))).event)
     }
 }

@@ -18,6 +18,7 @@ dependencies {
     implementation(project(":modules:clans"))
     implementation(project(":modules:teleport"))
     implementation(project(":modules:auction-house"))
+    implementation(project(":modules:admin-shop"))
     implementation("io.lettuce:lettuce-core:7.8.0.RELEASE")
     compileOnly("io.papermc.paper:paper-api:26.3.build.205-stable")
     compileOnly("net.luckperms:api:5.5")
@@ -55,4 +56,5 @@ tasks.jar {
     from(project(":modules:clans").the<SourceSetContainer>()["main"].output)
     from(project(":modules:teleport").the<SourceSetContainer>()["main"].output)
     from(project(":modules:auction-house").the<SourceSetContainer>()["main"].output)
+    from(project(":modules:admin-shop").the<SourceSetContainer>()["main"].output)
 }

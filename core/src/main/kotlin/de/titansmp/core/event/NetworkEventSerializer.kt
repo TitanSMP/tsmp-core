@@ -52,6 +52,7 @@ import de.titansmp.api.auctionhouse.AuctionChanged
 import de.titansmp.api.auctionhouse.AuctionItemClaimed
 import de.titansmp.api.auctionhouse.AuctionStatus
 import de.titansmp.api.auctionhouse.AuctionItemKind
+import de.titansmp.api.shop.ShopCategoryStateChanged
 import java.time.Instant
 import java.util.UUID
 
@@ -106,6 +107,7 @@ class NetworkEventSerializer(
             TeleportLocationRequested.TYPE -> TeleportLocationRequested(metadata,payload.uuid("operationId"),payload.uuid("requesterUuid"),payload.uuid("movingPlayerUuid"))
             AuctionChanged.TYPE -> AuctionChanged(metadata,payload.uuid("auctionId"),payload.uuid("sellerUuid"),payload.nullableUuid("buyerUuid"),AuctionStatus.valueOf(payload.text("status")))
             AuctionItemClaimed.TYPE -> AuctionItemClaimed(metadata,payload.uuid("itemId"),payload.uuid("ownerUuid"),AuctionItemKind.valueOf(payload.text("kind")))
+            ShopCategoryStateChanged.TYPE -> ShopCategoryStateChanged(metadata,payload.text("categoryId"),payload.path("enabled").asBoolean(),payload.uuid("updatedBy"),payload.instant("updatedAt"))
             PlayerDisconnected.TYPE -> PlayerDisconnected(metadata, payload.uuid("playerId"), payload.text("serverId"))
             PlayerServerChanged.TYPE -> PlayerServerChanged(metadata, payload.uuid("playerId"), payload.text("previousServerId"), payload.text("newServerId"))
             PlayerBanned.TYPE -> PlayerBanned(metadata, payload.uuid("targetId"), payload.text("targetName"), payload.uuid("actionId"), payload.nullableUuid("actorId"), payload.text("actorName"), payload.text("reason"), payload.instant("createdAt"), payload.nullableInstant("expiresAt"), payload.text("serverId"))
@@ -236,6 +238,7 @@ class NetworkEventSerializer(
             is TeleportLocationRequested -> { node.put("operationId",event.operationId.toString());node.put("requesterUuid",event.requesterUuid.toString());node.put("movingPlayerUuid",event.movingPlayerUuid.toString()) }
             is AuctionChanged -> { node.put("auctionId",event.auctionId.toString());node.put("sellerUuid",event.sellerUuid.toString());if(event.buyerUuid==null)node.putNull("buyerUuid") else node.put("buyerUuid",event.buyerUuid.toString());node.put("status",event.status.name) }
             is AuctionItemClaimed -> { node.put("itemId",event.itemId.toString());node.put("ownerUuid",event.ownerUuid.toString());node.put("kind",event.kind.name) }
+            is ShopCategoryStateChanged -> { node.put("categoryId",event.categoryId);node.put("enabled",event.enabled);node.put("updatedBy",event.updatedBy.toString());node.put("updatedAt",event.updatedAt.toString()) }
             is PlayerConnected -> {
                 node.put("playerId", event.playerId.toString())
                 node.put("username", event.username)

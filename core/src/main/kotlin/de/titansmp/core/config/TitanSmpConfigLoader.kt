@@ -157,7 +157,80 @@ class TitanSmpConfigLoader {
                 aliases = value("auction-house.aliases", "TITANSMP_AUCTION_HOUSE_ALIASES", "auctionhouse,auction")
                     .split(',').map(String::trim).filter(String::isNotEmpty),
             ),
+            shop = loadShop(properties, environment),
         )
+    }
+
+    private fun loadShop(properties: Properties, environment: Map<String, String>): ShopConfig {
+        fun value(key: String, default: String? = null): String = environment[key.uppercase().replace('.', '_').replace('-', '_')]
+            ?.takeIf(String::isNotBlank)?.trim() ?: properties.getProperty(key)?.trim() ?: default
+            ?: throw ConfigurationException("Missing required configuration '$key'")
+        fun optional(key: String): String? = properties.getProperty(key)?.trim()?.takeIf(String::isNotEmpty)
+        val categories = linkedMapOf<String, MutableShopCategory>()
+        val categoryPattern = Regex("^shop\\.categories\\.([a-z0-9][a-z0-9_-]{0,63})\\.(display-name|icon|slot|enabled)$")
+        val itemPattern = Regex("^shop\\.categories\\.([a-z0-9][a-z0-9_-]{0,63})\\.items\\.([a-z0-9][a-z0-9_-]{0,63})\\.(material|slot|display-name|buy-price|sell-price|amount)$")
+        properties.stringPropertyNames().sorted().forEach { key ->
+            when {
+                key.startsWith("shop.categories.") -> {
+                    val item = itemPattern.matchEntire(key)
+                    val category = categoryPattern.matchEntire(key)
+                    if (item != null) {
+                        val cat = categories.getOrPut(item.groupValues[1]) { MutableShopCategory() }
+                        val id = item.groupValues[2]
+                        val fields = cat.items.getOrPut(id) { MutableShopItem() }
+                        fields.set(item.groupValues[3], properties.getProperty(key).trim(), key)
+                    } else if (category != null) {
+                        val cat = categories.getOrPut(category.groupValues[1]) { MutableShopCategory() }
+                        cat.set(category.groupValues[2], properties.getProperty(key).trim(), key)
+                    } else throw ConfigurationException("Invalid shop configuration property '$key'")
+                }
+            }
+        }
+        val built = categories.map { (id, category) ->
+            ShopCategoryConfig(id, category.displayName ?: throw ConfigurationException("Missing shop category display-name for '$id'"),
+                category.icon ?: throw ConfigurationException("Missing shop category icon for '$id'"),
+                category.slot ?: throw ConfigurationException("Missing shop category slot for '$id'"), category.enabled,
+                category.items.map { (itemId, item) -> ShopItemConfig(itemId,
+                    item.material ?: throw ConfigurationException("Missing material for shop item '$id.$itemId'"),
+                    item.slot ?: throw ConfigurationException("Missing slot for shop item '$id.$itemId'"),
+                    item.amount ?: throw ConfigurationException("Missing amount for shop item '$id.$itemId'"),
+                    item.displayName ?: throw ConfigurationException("Missing display-name for shop item '$id.$itemId'"),
+                    parseShopPrice(item.buyPrice, "shop.categories.$id.items.$itemId.buy-price"),
+                    parseShopPrice(item.sellPrice, "shop.categories.$id.items.$itemId.sell-price")) }
+            )
+        }
+        val normalizedIds = built.map { it.id.lowercase() }
+        if (normalizedIds.distinct().size != normalizedIds.size) throw ConfigurationException("Duplicate shop category ID (case-insensitive)")
+        return try { ShopConfig(value("shop.enabled", "true").toBooleanStrict(), built) }
+        catch (failure: IllegalArgumentException) { throw ConfigurationException("Invalid shop configuration: ${failure.message}", failure) }
+    }
+
+    private fun parseShopPrice(raw: String?, key: String): de.titansmp.api.economy.Money? {
+        if (raw == null || raw.equals("null", true)) return null
+        return try { de.titansmp.api.economy.Money.of(raw).also { if (it.isNegative()) throw IllegalArgumentException("negative") } }
+        catch (failure: Exception) { throw ConfigurationException("Invalid shop price for '$key': '$raw'", failure) }
+    }
+
+    private class MutableShopCategory {
+        var displayName: String? = null; var icon: String? = null; var slot: Int? = null; var enabled = true
+        val items = linkedMapOf<String, MutableShopItem>()
+        fun set(field: String, raw: String, key: String) { when(field) {
+            "display-name" -> displayName=raw
+            "icon" -> icon=raw
+            "slot" -> slot=raw.toIntOrNull() ?: throw ConfigurationException("Invalid integer for '$key'")
+            "enabled" -> enabled=raw.toBooleanStrictOrConfigError(key)
+        } }
+    }
+    private class MutableShopItem {
+        var material:String?=null; var slot:Int?=null; var displayName:String?=null; var buyPrice:String?=null; var sellPrice:String?=null; var amount:Int?=null
+        fun set(field:String,raw:String,key:String) { when(field) {
+            "material" -> material=raw
+            "slot" -> slot=raw.toIntOrNull() ?: throw ConfigurationException("Invalid integer for '$key'")
+            "display-name" -> displayName=raw
+            "buy-price" -> buyPrice=raw
+            "sell-price" -> sellPrice=raw
+            "amount" -> amount=raw.toIntOrNull() ?: throw ConfigurationException("Invalid integer for '$key'")
+        } }
     }
 
     private fun loadServerTransfer(

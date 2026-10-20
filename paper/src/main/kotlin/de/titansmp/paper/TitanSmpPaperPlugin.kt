@@ -43,6 +43,9 @@ import de.titansmp.paper.teleport.TeleportPaperModule
 import de.titansmp.auctionhouse.DefaultAuctionHouseService
 import de.titansmp.auctionhouse.JdbcAuctionRepository
 import de.titansmp.paper.auctionhouse.AuctionHousePaperModule
+import de.titansmp.shop.DefaultShopService
+import de.titansmp.shop.ShopCategoryStateRepository
+import de.titansmp.paper.shop.AdminShopPaperModule
 import net.luckperms.api.LuckPerms
 import net.luckperms.api.util.Tristate
 import org.bukkit.entity.Player
@@ -70,6 +73,7 @@ class TitanSmpPaperPlugin : JavaPlugin() {
     @Volatile private var clansModule: ClansPaperModule? = null
     @Volatile private var teleportModule: TeleportPaperModule? = null
     @Volatile private var auctionHouseModule: AuctionHousePaperModule? = null
+    @Volatile private var shopModule: AdminShopPaperModule? = null
     private var clanDisplayRefresh: ClanDisplayRefreshListener? = null
     @Volatile private var moderationPersistence: java.util.concurrent.ExecutorService? = null
     @Volatile private var economyPersistence: java.util.concurrent.ExecutorService? = null
@@ -99,6 +103,13 @@ class TitanSmpPaperPlugin : JavaPlugin() {
                         val luckPerms = Bukkit.getServicesManager().load(LuckPerms::class.java)
                         if (luckPerms == null) {
                             logger.severe("LuckPerms is required to start the TitanSMP EnderChest feature")
+                            server.pluginManager.disablePlugin(this)
+                            return@Runnable
+                        }
+                        try {
+                            AdminShopPaperModule.validate(startedRuntime.shopConfig)
+                        } catch (failure: IllegalArgumentException) {
+                            logger.severe("Invalid TitanSMP shop configuration: ${failure.message}")
                             server.pluginManager.disablePlugin(this)
                             return@Runnable
                         }
@@ -169,6 +180,21 @@ class TitanSmpPaperPlugin : JavaPlugin() {
                             serverIdentity.identity.id,
                             economyExecutor,
                         ).also { it.register() }
+                        if (startedRuntime.shopConfig.enabled) {
+                            shopModule = AdminShopPaperModule(
+                                this,
+                                DefaultShopService(
+                                    ShopCategoryStateRepository(startedRuntime.databaseDataSource()),
+                                    startedRuntime.eventBus(),
+                                    economyExecutor,
+                                    serverIdentity.identity.id,
+                                ),
+                                economyService,
+                                startedRuntime.eventBus(),
+                                startedRuntime.shopConfig,
+                                serverIdentity.identity.id,
+                            ).also { it.register() }
+                        }
                         if (startedRuntime.auctionHouseConfig.enabled) {
                             auctionHouseModule = AuctionHousePaperModule(
                                 this,
@@ -388,6 +414,8 @@ class TitanSmpPaperPlugin : JavaPlugin() {
         teleportModule = null
         auctionHouseModule?.close()
         auctionHouseModule = null
+        shopModule?.close()
+        shopModule = null
         discordModule?.close()
         discordModule = null
         economyModule?.close()

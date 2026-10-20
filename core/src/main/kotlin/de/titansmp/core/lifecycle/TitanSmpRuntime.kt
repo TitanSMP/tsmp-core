@@ -13,6 +13,7 @@ import de.titansmp.core.config.FriendsConfig
 import de.titansmp.core.config.ClansConfig
 import de.titansmp.core.config.TeleportConfig
 import de.titansmp.core.config.AuctionHouseConfig
+import de.titansmp.core.config.ShopConfig
 import de.titansmp.core.config.TitanSmpConfig
 import de.titansmp.core.config.TitanSmpConfigLoader
 import de.titansmp.core.database.DatabaseMigrator
@@ -72,6 +73,8 @@ class TitanSmpRuntime(
         private set
     @Volatile var auctionHouseConfig: AuctionHouseConfig = AuctionHouseConfig()
         private set
+    @Volatile var shopConfig: ShopConfig = ShopConfig()
+        private set
     @Volatile var networkId: String = "titansmp"
         private set
 
@@ -115,6 +118,7 @@ class TitanSmpRuntime(
             clansConfig = configuration.clans
             teleportConfig = configuration.teleport
             auctionHouseConfig = configuration.auctionHouse
+            shopConfig = configuration.shop
             networkId = configuration.networkId
             val server = ConfiguredNetworkServer(configuration.serverIdentity, configuration.networkName)
             networkServer = server

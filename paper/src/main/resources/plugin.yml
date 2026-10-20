@@ -70,6 +70,14 @@ commands:
     description: Browse and manage network-wide player auctions
     usage: /ah [sell <price>|expired|purchased|cancel <auction-id>|info]
     aliases: [auctionhouse, auction]
+  shop:
+    description: Open the TitanSMP TitanCoins shop
+    usage: /shop
+    permission: titansmp.shop.use
+  shopadmin:
+    description: Configure TitanSMP shop categories
+    usage: /shopadmin category <category> <enable|disable|status>
+    permission: titansmp.shop.admin
   home:
     description: Teleport to a saved home
     usage: /home <name>
@@ -133,6 +141,12 @@ permissions:
     default: false
   titansmp.economy.admin:
     description: Allows giving, taking, and setting TitanCoins
+    default: false
+  titansmp.shop.use:
+    description: Allows browsing and using the TitanSMP shop
+    default: true
+  titansmp.shop.admin:
+    description: Allows changing TitanSMP shop category state
     default: false
 libraries:
   - org.jetbrains.kotlin:kotlin-stdlib:2.4.21
