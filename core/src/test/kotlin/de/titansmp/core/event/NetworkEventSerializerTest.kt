@@ -209,4 +209,28 @@ class NetworkEventSerializerTest {
         )
         assertEquals(event, serializer.deserialize(serializer.serialize(EventEnvelope(event))).event)
     }
+
+    @Test fun `player stats updated event round trips every statistic`() {
+        val player = UUID.randomUUID()
+        val stats = de.titansmp.api.stats.PlayerStats(
+            playerUuid = player,
+            playtimeSeconds = 3_600,
+            joins = 7,
+            deaths = 3,
+            blocksMined = 12_345,
+            blocksWalked = 4_200,
+            blocksElytra = 900,
+            damageTaken = 250,
+            damageDealt = 310,
+            mobsKilled = 88,
+            playersKilled = 4,
+            updatedAt = Instant.parse("2026-10-20T10:00:00Z"),
+        )
+        val event = de.titansmp.api.stats.PlayerStatsUpdated(
+            metadata.copy(eventType = de.titansmp.api.stats.PlayerStatsUpdated.TYPE),
+            player,
+            stats,
+        )
+        assertEquals(event, serializer.deserialize(serializer.serialize(EventEnvelope(event))).event)
+    }
 }

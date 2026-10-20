@@ -25,6 +25,13 @@ import de.titansmp.core.economy.JdbcEconomyRepository
 import de.titansmp.core.economy.LuckPermsEconomyPermissionService
 import de.titansmp.paper.economy.EconomyPaperModule
 import de.titansmp.paper.servertransfer.ServerQueuePaperModule
+import de.titansmp.core.stats.DefaultStatsService
+import de.titansmp.core.stats.FractionalAccumulator
+import de.titansmp.core.stats.JdbcStatsRepository
+import de.titansmp.core.stats.PlaytimeTracker
+import de.titansmp.core.stats.StatsAggregator
+import de.titansmp.core.stats.StatsTrackingPolicy
+import de.titansmp.paper.stats.StatsPaperModule
 import net.luckperms.api.LuckPerms
 import net.luckperms.api.util.Tristate
 import org.bukkit.entity.Player
@@ -47,8 +54,10 @@ class TitanSmpPaperPlugin : JavaPlugin() {
     private var displayListener: LuckPermsDisplayListener? = null
     @Volatile private var economyModule: EconomyPaperModule? = null
     @Volatile private var serverQueueModule: ServerQueuePaperModule? = null
+    @Volatile private var statsModule: StatsPaperModule? = null
     @Volatile private var moderationPersistence: java.util.concurrent.ExecutorService? = null
     @Volatile private var economyPersistence: java.util.concurrent.ExecutorService? = null
+    @Volatile private var statsPersistence: java.util.concurrent.ExecutorService? = null
     private val runtimeReady = CompletableFuture<PaperPlayerIdentityRuntime>()
     private val lifecycle = Executors.newSingleThreadExecutor { task ->
         Thread(task, "titansmp-lifecycle").apply { isDaemon = true }
@@ -148,6 +157,36 @@ class TitanSmpPaperPlugin : JavaPlugin() {
                             ).also { it.register() }
                         } else {
                             logger.info("Server transfer queues are disabled; queue ActionBars are not registered.")
+                        }
+                        if (startedRuntime.statsConfig.enabled) {
+                            val statsExecutor = Executors.newFixedThreadPool(2) { task ->
+                                Thread(task, "titansmp-stats-db").apply { isDaemon = true }
+                            }
+                            statsPersistence = statsExecutor
+                            val policy = StatsTrackingPolicy(startedRuntime.statsConfig, serverIdentity.identity.type.name)
+                            val aggregator = StatsAggregator(
+                                DefaultStatsService(
+                                    JdbcStatsRepository(startedRuntime.databaseDataSource()),
+                                    startedRuntime.eventBus(),
+                                    statsExecutor,
+                                    serverIdentity.identity.id,
+                                ),
+                                logger,
+                            )
+                            val damageAccumulator = FractionalAccumulator()
+                            statsModule = StatsPaperModule(
+                                this,
+                                policy,
+                                aggregator,
+                                PlaytimeTracker(policy.tracks(de.titansmp.api.stats.StatType.PLAYTIME), aggregator),
+                                FractionalAccumulator(),
+                                damageAccumulator,
+                                startedRuntime.eventBus(),
+                                serverIdentity.identity.id,
+                                startedRuntime.statsConfig.flushIntervalMs,
+                            ).also { it.register() }
+                        } else {
+                            logger.info("TitanSMP statistics are disabled; no statistics listeners are registered.")
                         }
                         val display = DefaultPlayerDisplayService(
                             LuckPermsDisplayProvider(luckPerms),
@@ -249,6 +288,9 @@ class TitanSmpPaperPlugin : JavaPlugin() {
         economyModule = null
         serverQueueModule?.close()
         serverQueueModule = null
+        statsModule?.flushAndClose()
+        statsModule?.close()
+        statsModule = null
         displayModule?.close()
         displayModule = null
         displayListener?.close()
@@ -261,6 +303,9 @@ class TitanSmpPaperPlugin : JavaPlugin() {
         val economyWorker = economyPersistence
         economyPersistence = null
         economyWorker?.shutdown()
+        val statsWorker = statsPersistence
+        statsPersistence = null
+        statsWorker?.shutdown()
         lifecycle.execute {
             listener?.awaitTermination()
             try {
@@ -282,6 +327,11 @@ class TitanSmpPaperPlugin : JavaPlugin() {
                 economyWorker?.awaitTermination(15, java.util.concurrent.TimeUnit.SECONDS)
             } catch (failure: Exception) {
                 logger.severe("TitanSMP economy shutdown failed: ${failure.message}")
+            }
+            try {
+                statsWorker?.awaitTermination(15, java.util.concurrent.TimeUnit.SECONDS)
+            } catch (failure: Exception) {
+                logger.severe("TitanSMP statistics shutdown failed: ${failure.message}")
             }
             try {
                 runtime?.close()

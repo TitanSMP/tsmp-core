@@ -14,6 +14,7 @@ class TitanSmpConfig(
     val chat: ChatConfig = ChatConfig(),
     val discord: DiscordConfig = DiscordConfig(),
     val serverTransfer: ServerTransferConfig = ServerTransferConfig(),
+    val stats: StatsConfig = StatsConfig(),
 ) {
     init {
         require(networkName.isNotBlank()) { "Network name must not be blank" }
@@ -22,7 +23,7 @@ class TitanSmpConfig(
     }
 
     override fun toString(): String =
-        "TitanSmpConfig(serverIdentity=$serverIdentity, networkName=$networkName, database=<redacted>, redis=<redacted>, playerTransferTimeoutMs=$playerTransferTimeoutMs, chat=$chat, discord=$discord, serverTransfer=$serverTransfer)"
+        "TitanSmpConfig(serverIdentity=$serverIdentity, networkName=$networkName, database=<redacted>, redis=<redacted>, playerTransferTimeoutMs=$playerTransferTimeoutMs, chat=$chat, discord=$discord, serverTransfer=$serverTransfer, stats=$stats)"
 }
 
 data class ChatConfig(

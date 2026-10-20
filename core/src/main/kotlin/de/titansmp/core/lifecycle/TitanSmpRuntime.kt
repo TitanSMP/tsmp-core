@@ -8,6 +8,7 @@ import de.titansmp.core.config.ChatConfig
 import de.titansmp.core.config.DiscordConfig
 import de.titansmp.core.config.RedisConfig
 import de.titansmp.core.config.ServerTransferConfig
+import de.titansmp.core.config.StatsConfig
 import de.titansmp.core.config.TitanSmpConfig
 import de.titansmp.core.config.TitanSmpConfigLoader
 import de.titansmp.core.database.DatabaseMigrator
@@ -57,6 +58,8 @@ class TitanSmpRuntime(
         private set
     @Volatile var serverTransferConfig: ServerTransferConfig = ServerTransferConfig()
         private set
+    @Volatile var statsConfig: StatsConfig = StatsConfig()
+        private set
     @Volatile var networkId: String = "titansmp"
         private set
 
@@ -95,6 +98,7 @@ class TitanSmpRuntime(
             chatConfig = configuration.chat
             discordConfig = configuration.discord
             serverTransferConfig = configuration.serverTransfer
+            statsConfig = configuration.stats
             networkId = configuration.networkId
             val server = ConfiguredNetworkServer(configuration.serverIdentity, configuration.networkName)
             networkServer = server

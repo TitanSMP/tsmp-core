@@ -13,6 +13,7 @@ dependencies {
     implementation(project(":modules:discord"))
     implementation(project(":modules:economy"))
     implementation(project(":modules:server-transfer"))
+    implementation(project(":modules:stats"))
     compileOnly("io.papermc.paper:paper-api:26.3.build.205-stable")
     compileOnly("net.luckperms:api:5.5")
 
@@ -44,4 +45,5 @@ tasks.jar {
     from(project(":modules:discord").the<SourceSetContainer>()["main"].output)
     from(project(":modules:economy").the<SourceSetContainer>()["main"].output)
     from(project(":modules:server-transfer").the<SourceSetContainer>()["main"].output)
+    from(project(":modules:stats").the<SourceSetContainer>()["main"].output)
 }

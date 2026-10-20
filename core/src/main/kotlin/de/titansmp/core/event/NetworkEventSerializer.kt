@@ -38,6 +38,8 @@ import de.titansmp.api.servertransfer.ServerQueueTransferCompleted
 import de.titansmp.api.servertransfer.ServerQueueTransferFailed
 import de.titansmp.api.servertransfer.ServerQueueTransferStarted
 import de.titansmp.api.servertransfer.ServerQueueUpdated
+import de.titansmp.api.stats.PlayerStats
+import de.titansmp.api.stats.PlayerStatsUpdated
 import java.time.Instant
 import java.util.UUID
 
@@ -153,6 +155,24 @@ class NetworkEventSerializer(
                 payload.text("targetServerId"),
                 payload.uuid("reservationId"),
                 payload.text("reason"),
+            )
+            PlayerStatsUpdated.TYPE -> PlayerStatsUpdated(
+                metadata,
+                payload.uuid("playerUuid"),
+                PlayerStats(
+                    playerUuid = payload.uuid("playerUuid"),
+                    playtimeSeconds = payload.path("playtime").longValue(),
+                    joins = payload.path("joins").longValue(),
+                    deaths = payload.path("deaths").longValue(),
+                    blocksMined = payload.path("blocksMined").longValue(),
+                    blocksWalked = payload.path("blocksWalked").longValue(),
+                    blocksElytra = payload.path("blocksElytra").longValue(),
+                    damageTaken = payload.path("damageTaken").longValue(),
+                    damageDealt = payload.path("damageDealt").longValue(),
+                    mobsKilled = payload.path("mobsKilled").longValue(),
+                    playersKilled = payload.path("playersKilled").longValue(),
+                    updatedAt = payload.instant("updatedAt"),
+                ),
             )
             else -> throw UnknownEventTypeException(type)
         }
@@ -270,6 +290,21 @@ class NetworkEventSerializer(
                 node.put("targetServerId", event.targetServerId)
                 node.put("reservationId", event.reservationId.toString())
                 node.put("reason", event.reason)
+            }
+            is PlayerStatsUpdated -> {
+                val stats = event.stats
+                node.put("playerUuid", stats.playerUuid.toString())
+                node.put("playtime", stats.playtimeSeconds)
+                node.put("joins", stats.joins)
+                node.put("deaths", stats.deaths)
+                node.put("blocksMined", stats.blocksMined)
+                node.put("blocksWalked", stats.blocksWalked)
+                node.put("blocksElytra", stats.blocksElytra)
+                node.put("damageTaken", stats.damageTaken)
+                node.put("damageDealt", stats.damageDealt)
+                node.put("mobsKilled", stats.mobsKilled)
+                node.put("playersKilled", stats.playersKilled)
+                node.put("updatedAt", stats.updatedAt.toString())
             }
             else -> throw UnsupportedEventTypeException(event.metadata.eventType)
         }

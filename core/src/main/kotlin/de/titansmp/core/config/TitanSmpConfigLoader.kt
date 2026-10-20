@@ -1,6 +1,8 @@
 package de.titansmp.core.config
 
 import de.titansmp.api.server.ServerIdentity
+import de.titansmp.api.server.ServerType
+import de.titansmp.api.stats.StatType
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.charset.StandardCharsets
@@ -122,6 +124,7 @@ class TitanSmpConfigLoader {
                 ),
             ),
             serverTransfer = loadServerTransfer(properties, environment),
+            stats = loadStats(properties, environment),
         )
     }
 
@@ -221,7 +224,92 @@ class TitanSmpConfigLoader {
         var enabled: Boolean = true,
         var maxPlayers: Int? = null,
     )
+
+    private fun loadStats(
+        properties: Properties,
+        environment: Map<String, String>,
+    ): StatsConfig {
+        fun value(key: String, variable: String, default: String): String =
+            environment[variable]?.takeIf(String::isNotBlank)?.trim()
+                ?: properties.getProperty(key)?.takeIf(String::isNotBlank)?.trim()
+                ?: default
+
+        fun longValue(key: String, variable: String, default: Long): Long =
+            value(key, variable, default.toString()).toLongOrNull()
+                ?: throw ConfigurationException("Invalid integer for '$key' (or '$variable')")
+
+        fun boolean(key: String, variable: String, default: Boolean): Boolean =
+            value(key, variable, default.toString()).toBooleanStrictOrConfigError(key)
+
+        val enabled = boolean("stats.enabled", "TITANSMP_STATS_ENABLED", false)
+        val flushIntervalMs = longValue("stats.flush-interval-ms", "TITANSMP_STATS_FLUSH_INTERVAL_MS", 5_000)
+
+        val enabledOverrides = linkedMapOf<StatType, Boolean>()
+        val typeLists = linkedMapOf<StatType, MutableSet<String>>()
+        val scopeOverrides = linkedMapOf<StatType, StatScope>()
+        val trackPattern = Regex("^stats\\.tracking\\.([a-z0-9-]+)\\.(enabled|scope|server-types)$")
+
+        properties.stringPropertyNames().sorted().forEach { key ->
+            if (!key.startsWith("stats.tracking.")) return@forEach
+            val match = trackPattern.matchEntire(key)
+                ?: throw ConfigurationException("Invalid stats tracking property '$key'")
+            val statType = match.groupValues[1].toStatType(key)
+            when (match.groupValues[2]) {
+                "enabled" -> enabledOverrides[statType] = properties.getProperty(key).trim().toBooleanStrictOrConfigError(key)
+                "scope" -> scopeOverrides[statType] = properties.getProperty(key).trim().toStatScope(key)
+                "server-types" -> {
+                    val types = properties.getProperty(key).split(',')
+                        .map { it.trim() }
+                        .filter { it.isNotEmpty() }
+                    types.forEach { ensureKnownServerType(it, key) }
+                    typeLists.getOrPut(statType) { linkedSetOf() }.addAll(types)
+                }
+            }
+        }
+
+        val tracking = StatType.entries.associateWith { statType ->
+            val statScope = scopeOverrides[statType] ?: StatScope.SERVER_TYPES
+            val statTypes = typeLists[statType]?.toSet() ?: emptySet()
+            val statEnabled = enabledOverrides[statType] ?: false
+            if (statEnabled && statScope == StatScope.SERVER_TYPES && statTypes.isEmpty()) {
+                throw ConfigurationException(
+                    "stats.tracking.${statType.configKey}.server-types must list at least one server type " +
+                        "when the statistic is enabled with scope=server-types (or use scope=network)",
+                )
+            }
+            StatTrackingConfig(statEnabled, statScope, statTypes)
+        }
+
+        return StatsConfig(enabled = enabled, flushIntervalMs = flushIntervalMs, tracking = tracking)
+    }
+
+    /**
+     * Rejects a `stats.tracking.<stat>.server-types` entry that is not a known [ServerType].
+     *
+     * The comparison is configuration-driven and case-insensitive. An unknown identity type is a
+     * configuration error so a typo cannot silently drop statistics.
+     */
+    private fun ensureKnownServerType(rawType: String, key: String) {
+        val known = ServerType.entries.any { it.name.equals(rawType, ignoreCase = true) }
+        if (!known) {
+            throw ConfigurationException(
+                "The stats property '$key' references unknown server type '$rawType'",
+            )
+        }
+    }
+
+    private fun String.toStatType(key: String): StatType {
+        val normalized = lowercase().replace('-', '_').replace("_", "")
+        return StatType.entries.firstOrNull { it.name.lowercase().replace("_", "") == normalized }
+            ?: throw ConfigurationException("The stats property '$key' references unknown statistic '$this'")
+    }
+
+    private fun String.toStatScope(key: String): StatScope =
+        StatScope.entries.firstOrNull { it.name.replace('_', '-').equals(this, ignoreCase = true) }
+            ?: throw ConfigurationException("Invalid stats scope '$this' for '$key'; expected network or server-types")
 }
+
+private val StatType.configKey: String get() = name.lowercase().replace('_', '-')
 
 private fun String.toBooleanStrictOrConfigError(key: String): Boolean = try {
     toBooleanStrict()

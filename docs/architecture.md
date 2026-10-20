@@ -58,8 +58,8 @@ Each feature module encapsulates its own domain and uses shared infrastructure t
 - **`modules/display`** owns the shared player display/meta layer. Public `PlayerDisplayMeta`, provider/suffix-provider/service contracts, and the `PlayerDisplayMetaChanged` event live in `api`. The module contains the LuckPerms display adapter (the only display code that reads ranks), the caching service, the single formatter, and the TAB ordering model. Velocity owns the network-wide TAB list; Paper renders nametags with the scoreboard-team API. No PlaceholderAPI or second rank store is used, and no new permissions are introduced.
 - **`modules/economy`** owns the single-currency TitanCoins system. Public money, service, reason, permission, and event contracts live in `api`; the module contains the business service, the transactional JDBC repository, and the LuckPerms permission adapter. Flyway migration V6 owns the wallet and append-only audit tables. Paper registers `/balance`, `/pay`, `/balancetop`, and `/eco` and consumes balance events. Every mutation locks balance rows and commits the balance update with its audit rows; Redis only propagates committed changes.
 - **`modules/server-transfer`** owns the network-wide server transfer and queue system. Public `ServerTransferService`, result/status types, and versioned queue events live in `api`; the module contains deterministic least-populated server selection, the priority/FIFO queue ordering model, the `QueueStore` abstraction with an in-memory and a Redis implementation, the coordinator, and the isolated LuckPerms queue-priority adapter. Server types, backend names, capacities, and aliases are configuration-driven and never hardcoded. Queues and reservations are transient Redis state (no MariaDB table). Velocity owns backend discovery, `/join`/`/lobby`/`/hub`, and the queue scheduler; the connection gateway reuses the existing coordinated Data Bridge transfer protocol rather than adding a second protocol. Paper owns only the ActionBar presentation. Velocity's native `/server` command is intentionally untouched. See [server-transfer.md](server-transfer.md).
+- **`modules/stats`** owns the network-wide player statistics system. Public `StatsService`, `PlayerStats`, `StatType`, `StatsLeaderboardEntry`, and the aggregated `PlayerStatsUpdated` event live in `api`; the module contains the additive JDBC repository, the atomic service, the local batching aggregator, the fractional (distance/damage) accumulator, the per-session playtime tracker, and the configuration-driven tracking policy. Flyway migration V7 owns the `player_stats` table. Which statistics are collected and on which server identity types is configuration-driven and never hardcoded. Paper records Bukkit events into in-memory counters and flushes them periodically off the main thread; network-wide joins are derived from the existing `PlayerConnected` presence event. See [stats.md](stats.md).
 - **`modules/social`** owns social functionality.
-- **`modules/stats`** owns player and network statistics functionality.
 - **`modules/auction-house`** owns auction house functionality.
 - **`modules/admin-shop`** owns admin shop functionality.
 - **`modules/tab`** owns TAB-related functionality.
@@ -84,6 +84,7 @@ modules/chat -> api, core
 modules/display -> api
 modules/economy -> api, core
 modules/server-transfer -> api, core
+modules/stats -> api, core
 paper     -> api, core, modules/ender-chest, modules/data-bridge
 paper     -> modules/moderation
 paper     -> modules/chat
@@ -91,14 +92,17 @@ paper     -> modules/display
 paper     -> modules/discord
 paper     -> modules/economy
 paper     -> modules/server-transfer
+paper     -> modules/stats
 velocity  -> api, core, modules/data-bridge, modules/ender-chest, modules/moderation
 velocity  -> modules/display
 velocity  -> modules/server-transfer
 velocity  -> modules/economy (runtime only, for the Flyway migration)
+velocity  -> modules/stats (runtime only, for the Flyway migration)
 modules/* -> api, core
 services/web-api -> (no project dependency declared yet)
 services/discord-bot -> api, core, modules/discord, modules/chat, modules/display
 services/discord-bot -> modules/economy (runtime only, for the Flyway migration)
+services/discord-bot -> modules/stats (runtime only, for the Flyway migration)
 services/discord-bot -> JDA (only module with a Discord library dependency)
 ```
 
@@ -106,6 +110,6 @@ services/discord-bot -> JDA (only module with a Discord library dependency)
 
 `modules/discord` keeps the feature-module dependency direction (`api` and `core`) and hosts no Discord library; its standalone runtime counterpart is `services/discord-bot`. `services/web-api` has no project dependency configured at this stage, keeping its future service calls separate from direct database access. The Data Bridge Paper adapter is hosted by the existing root `paper` project; it does not create a second Paper plugin or dependency cycle. Potion Effects and Advancement criterion progress are part of the existing revisioned state and Velocity transfer flow. Potion Effects use stable registry IDs, duration ticks, flags, infinite duration, hidden effect chains, and a capture timestamp. Advancement data stores namespaced keys with per-criterion completion booleans, not definitions. If restoring a completed advancement would execute rewards, the target progress is deferred while the complete canonical saved state remains in the same payload. There is no feature-specific Redis protocol or separate persistence path. Death and respawn do not remove advancements.
 
-These directions are acyclic: foundation contracts sit at the bottom, shared implementation depends on those contracts, and integrations/features depend on the foundation. Database and Redis connections are implemented only in `core`; feature modules reuse them. See [player-identity.md](player-identity.md), [ender-chest.md](ender-chest.md), [data-bridge.md](data-bridge.md), [moderation.md](moderation.md), [chat.md](chat.md), [display.md](display.md), [economy.md](economy.md), [server-transfer.md](server-transfer.md), and [discord.md](discord.md) for implemented service boundaries. Chat, moderation, display, economy, server transfer, and Discord do not create another connection or event bus; the Discord bot subscribes to the existing `EventBus`. Velocity and the Discord bot load `modules:economy` at runtime only so the V6 Flyway migration is visible; they do not expose economy commands. `modules:server-transfer` creates no database table: queues and reservations live only in Redis and reuse the existing `EventBus`.
+These directions are acyclic: foundation contracts sit at the bottom, shared implementation depends on those contracts, and integrations/features depend on the foundation. Database and Redis connections are implemented only in `core`; feature modules reuse them. See [player-identity.md](player-identity.md), [ender-chest.md](ender-chest.md), [data-bridge.md](data-bridge.md), [moderation.md](moderation.md), [chat.md](chat.md), [display.md](display.md), [economy.md](economy.md), [server-transfer.md](server-transfer.md), [stats.md](stats.md), and [discord.md](discord.md) for implemented service boundaries. Chat, moderation, display, economy, server transfer, statistics, and Discord do not create another connection or event bus; the Discord bot subscribes to the existing `EventBus`. Velocity and the Discord bot load `modules:economy` and `modules:stats` at runtime only so the V6 economy and V7 stats Flyway migrations are visible; they do not expose economy or statistics commands. `modules:server-transfer` creates no database table: queues and reservations live only in Redis and reuse the existing `EventBus`. `modules:stats` adds no new connection pool and no second event bus; statistics counters are batched locally and written to the shared MariaDB pool off the game thread.
 
 Player inventory map items use Paper's shared opaque item codec, but their referenced map assets and `MapView` state remain server-managed. The Paper 26.3 API does not expose a complete safe map-content export/import contract, and map IDs are not defined as network-global. TitanSMP does not put map pixels in `PlayerState`, remap IDs, or serialize plugin renderers. See [map-sync.md](map-sync.md) for the API analysis and limitations.
