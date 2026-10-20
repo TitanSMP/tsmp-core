@@ -20,6 +20,10 @@ import de.titansmp.paper.chat.ChatPaperModule
 import de.titansmp.core.discord.link.DefaultDiscordLinkService
 import de.titansmp.core.discord.link.JdbcDiscordLinkRepository
 import de.titansmp.paper.discord.DiscordLinkPaperModule
+import de.titansmp.core.economy.DefaultEconomyService
+import de.titansmp.core.economy.JdbcEconomyRepository
+import de.titansmp.core.economy.LuckPermsEconomyPermissionService
+import de.titansmp.paper.economy.EconomyPaperModule
 import net.luckperms.api.LuckPerms
 import net.luckperms.api.util.Tristate
 import org.bukkit.entity.Player
@@ -40,7 +44,9 @@ class TitanSmpPaperPlugin : JavaPlugin() {
     @Volatile private var displayModule: PlayerDisplayPaperModule? = null
     @Volatile private var displayService: DefaultPlayerDisplayService? = null
     private var displayListener: LuckPermsDisplayListener? = null
+    @Volatile private var economyModule: EconomyPaperModule? = null
     @Volatile private var moderationPersistence: java.util.concurrent.ExecutorService? = null
+    @Volatile private var economyPersistence: java.util.concurrent.ExecutorService? = null
     private val runtimeReady = CompletableFuture<PaperPlayerIdentityRuntime>()
     private val lifecycle = Executors.newSingleThreadExecutor { task ->
         Thread(task, "titansmp-lifecycle").apply { isDaemon = true }
@@ -112,6 +118,24 @@ class TitanSmpPaperPlugin : JavaPlugin() {
                             startedRuntime.eventBus(),
                             serverIdentity.identity.id,
                             moderationExecutor,
+                        ).also { it.register() }
+                        val economyExecutor = Executors.newFixedThreadPool(2) { task ->
+                            Thread(task, "titansmp-economy-db").apply { isDaemon = true }
+                        }
+                        economyPersistence = economyExecutor
+                        economyModule = EconomyPaperModule(
+                            this,
+                            DefaultEconomyService(
+                                JdbcEconomyRepository(startedRuntime.databaseDataSource()),
+                                LuckPermsEconomyPermissionService(luckPerms),
+                                startedRuntime.playerService(),
+                                startedRuntime.eventBus(),
+                                economyExecutor,
+                            ),
+                            startedRuntime.playerService(),
+                            startedRuntime.eventBus(),
+                            serverIdentity.identity.id,
+                            economyExecutor,
                         ).also { it.register() }
                         val display = DefaultPlayerDisplayService(
                             LuckPermsDisplayProvider(luckPerms),
@@ -209,6 +233,8 @@ class TitanSmpPaperPlugin : JavaPlugin() {
         chatModule = null
         discordModule?.close()
         discordModule = null
+        economyModule?.close()
+        economyModule = null
         displayModule?.close()
         displayModule = null
         displayListener?.close()
@@ -218,6 +244,9 @@ class TitanSmpPaperPlugin : JavaPlugin() {
         val moderationWorker = moderationPersistence
         moderationPersistence = null
         moderationWorker?.shutdown()
+        val economyWorker = economyPersistence
+        economyPersistence = null
+        economyWorker?.shutdown()
         lifecycle.execute {
             listener?.awaitTermination()
             try {
@@ -234,6 +263,11 @@ class TitanSmpPaperPlugin : JavaPlugin() {
                 moderationWorker?.awaitTermination(15, java.util.concurrent.TimeUnit.SECONDS)
             } catch (failure: Exception) {
                 logger.severe("TitanSMP moderation shutdown failed: ${failure.message}")
+            }
+            try {
+                economyWorker?.awaitTermination(15, java.util.concurrent.TimeUnit.SECONDS)
+            } catch (failure: Exception) {
+                logger.severe("TitanSMP economy shutdown failed: ${failure.message}")
             }
             try {
                 runtime?.close()

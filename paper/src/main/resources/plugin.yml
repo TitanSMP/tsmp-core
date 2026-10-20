@@ -30,6 +30,22 @@ commands:
   unlink:
     description: Remove the Discord account linked to your Minecraft account
     usage: /unlink
+  balance:
+    description: Show your TitanCoins balance or another player's balance
+    usage: /balance [player]
+    aliases: [bal, money]
+  pay:
+    description: Send TitanCoins to another online player
+    usage: /pay <player> <amount>
+    aliases: [send]
+  balancetop:
+    description: Show the richest players on the TitanSMP network
+    usage: /balancetop
+    aliases: [baltop]
+  eco:
+    description: Give, take, or set TitanCoins
+    usage: /eco <give|take|set> <player> <amount>
+    aliases: [economy]
 permissions:
   titansmp.enderchest.rows.1:
     description: Grants access to one row of TitanSMP EnderChest storage
@@ -66,6 +82,21 @@ permissions:
     default: false
   titansmp.chat.global:
     description: Reserved for future network chat modes
+    default: false
+  titansmp.economy.balance:
+    description: Allows checking your own TitanCoins balance
+    default: false
+  titansmp.economy.balance.others:
+    description: Allows checking another player's TitanCoins balance
+    default: false
+  titansmp.economy.pay:
+    description: Allows sending TitanCoins to another player
+    default: false
+  titansmp.economy.balancetop:
+    description: Allows viewing the TitanCoins leaderboard
+    default: false
+  titansmp.economy.admin:
+    description: Allows giving, taking, and setting TitanCoins
     default: false
 libraries:
   - org.jetbrains.kotlin:kotlin-stdlib:2.4.21

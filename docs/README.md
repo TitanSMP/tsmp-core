@@ -17,8 +17,9 @@ See [moderation.md](moderation.md) for the network-wide moderation service, Luck
 See [chat.md](chat.md) for the network chat service, message/event model, moderation and permission checks, Paper integration, rate limits, length validation, and duplicate protection.
 See [display.md](display.md) for the shared player display/meta layer, LuckPerms-backed prefix and weight resolution, the network-wide Velocity TAB list, Paper nametags, chat prefix integration, and clan-suffix preparation.
 See [discord.md](discord.md) for the Discord integration: the dedicated JDA bot runtime, Minecraft/Discord account linking with single-use hashed link codes, the configurable verified role, and the two-way chat bridge between Minecraft and the configured Discord channel. Discord IDs are configuration values and are never hardcoded in source code.
+See [economy.md](economy.md) for the network-wide TitanCoins system: exact minor-unit money, LuckPerms permissions, atomic MariaDB transfers and audit rows, Redis balance events, and the Paper commands `/balance`, `/pay`, `/balancetop`, and `/eco`.
 
-The repository is organized into platform-independent contracts (`api`), shared infrastructure (`core`), platform integrations (`paper` and `velocity`), feature modules under `modules/`, and standalone services under `services/`. Player identity, the independent EnderChest, Data Bridge Phases 1, 1.5, 2, and 3, network moderation, network chat, the shared player display/TAB layer, and the Discord integration are implemented. Other feature modules remain structural placeholders. MariaDB is the durable source of truth; Redis carries transfer coordination and network events including ephemeral chat messages and display-meta change notifications.
+The repository is organized into platform-independent contracts (`api`), shared infrastructure (`core`), platform integrations (`paper` and `velocity`), feature modules under `modules/`, and standalone services under `services/`. Player identity, the independent EnderChest, Data Bridge Phases 1, 1.5, 2, and 3, network moderation, network chat, the shared player display/TAB layer, the Discord integration, and the single-currency TitanCoins economy are implemented. Other feature modules remain structural placeholders. MariaDB is the durable source of truth; Redis carries transfer coordination and network events including ephemeral chat messages and display-meta change notifications.
 
 ## Module inventory
 
@@ -36,7 +37,7 @@ The repository is organized into platform-independent contracts (`api`), shared 
 - `modules/moderation`
 - `modules/chat`
 - `modules/display`
-- `modules/economy`
+- `modules/economy` — the single-currency TitanCoins service, transactional JDBC repository, LuckPerms adapter, and Paper command surface; see [economy.md](economy.md)
 - `modules/social`
 - `modules/stats`
 - `modules/auction-house`

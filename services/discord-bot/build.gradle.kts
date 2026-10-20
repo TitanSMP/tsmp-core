@@ -9,6 +9,7 @@ dependencies {
     implementation(project(":modules:discord"))
     implementation(project(":modules:chat"))
     implementation(project(":modules:display"))
+    runtimeOnly(project(":modules:economy")) // Includes the already-applied Flyway V6 economy migration in the bot classpath.
 
     // JDA 6.7.0 - the Discord library used by this runtime. Version is documented in docs/discord.md.
     // opus-java only serves voice audio and pulls native libraries this bot never loads.

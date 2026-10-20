@@ -23,6 +23,9 @@ import de.titansmp.api.chat.NetworkChatMessage
 import de.titansmp.api.display.PlayerDisplayMeta
 import de.titansmp.api.display.PlayerDisplayMetaChanged
 import de.titansmp.api.discord.DiscordAccountUnlinked
+import de.titansmp.api.economy.EconomyBalanceChanged
+import de.titansmp.api.economy.EconomyReason
+import de.titansmp.api.economy.Money
 import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
@@ -135,6 +138,45 @@ class NetworkEventSerializerTest {
             PlayerDisplayMetaChanged(metadata.copy(eventType = PlayerDisplayMetaChanged.TYPE), player, PlayerDisplayMeta(player, "", "[TITAN]", 0)),
         )
         events.forEach { assertEquals(it, serializer.deserialize(serializer.serialize(EventEnvelope(it))).event) }
+    }
+
+    @Test fun `economy balance change round trips money reason source and transaction id`() {
+        val transactionId = UUID.randomUUID()
+        val player = UUID.randomUUID()
+        val counterparty = UUID.randomUUID()
+        val actor = UUID.randomUUID()
+        val events = listOf(
+            EconomyBalanceChanged(
+                metadata.copy(eventType = EconomyBalanceChanged.TYPE),
+                transactionId,
+                player,
+                Money.of("100.50"),
+                Money.of("1000.00"),
+                Money.of("1100.50"),
+                EconomyReason.PAYMENT,
+                counterparty,
+                "Henry",
+                null,
+                "smp-01",
+            ),
+            EconomyBalanceChanged(
+                metadata.copy(eventType = EconomyBalanceChanged.TYPE),
+                transactionId,
+                counterparty,
+                Money.of("100.50"),
+                Money.of("10.00"),
+                Money.of("110.50"),
+                EconomyReason.ADMIN_GIVE,
+                null,
+                null,
+                actor,
+                "smp-02",
+            ),
+        )
+        events.forEach { event ->
+            val decoded = serializer.deserialize(serializer.serialize(EventEnvelope(event))).event
+            assertEquals(event, decoded)
+        }
     }
 
     @Test fun `discord account unlink event round trips uuid name and discord id`() {

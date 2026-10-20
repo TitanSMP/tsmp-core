@@ -29,6 +29,9 @@ import de.titansmp.api.chat.NetworkChatMessage
 import de.titansmp.api.display.PlayerDisplayMeta
 import de.titansmp.api.display.PlayerDisplayMetaChanged
 import de.titansmp.api.discord.DiscordAccountUnlinked
+import de.titansmp.api.economy.EconomyBalanceChanged
+import de.titansmp.api.economy.EconomyReason
+import de.titansmp.api.economy.Money
 import java.time.Instant
 import java.util.UUID
 
@@ -96,6 +99,19 @@ class NetworkEventSerializer(
             PlayerTransferFailed.TYPE -> PlayerTransferFailed(metadata, payload.uuid("transferId"), payload.uuid("playerUuid"), payload.text("sourceServerId"), payload.text("targetServerId"), payload.text("reason"), payload.instant("timestamp"))
             PlayerTransferCompleted.TYPE -> PlayerTransferCompleted(metadata, payload.uuid("transferId"), payload.uuid("playerUuid"), payload.text("sourceServerId"), payload.text("targetServerId"), payload.path("stateRevision").longValue(), payload.instant("timestamp"))
             DiscordAccountUnlinked.TYPE -> DiscordAccountUnlinked(metadata, payload.uuid("playerUuid"), payload.text("playerName"), payload.path("discordUserId").longValue())
+            EconomyBalanceChanged.TYPE -> EconomyBalanceChanged(
+                metadata,
+                payload.uuid("transactionId"),
+                payload.uuid("playerUuid"),
+                payload.money("amount"),
+                payload.money("oldBalance"),
+                payload.money("newBalance"),
+                EconomyReason.valueOf(payload.text("reason")),
+                payload.nullableUuid("counterpartyUuid"),
+                payload.nullableText("counterpartyName"),
+                payload.nullableUuid("actorUuid"),
+                payload.text("sourceServerId"),
+            )
             else -> throw UnknownEventTypeException(type)
         }
         return EventEnvelope(event)
@@ -170,6 +186,18 @@ class NetworkEventSerializer(
                 node.put("playerName", event.playerName)
                 node.put("discordUserId", event.discordUserId)
             }
+            is EconomyBalanceChanged -> {
+                node.put("transactionId", event.transactionId.toString())
+                node.put("playerUuid", event.playerUuid.toString())
+                node.put("amount", event.amount.minorUnits)
+                node.put("oldBalance", event.oldBalance.minorUnits)
+                node.put("newBalance", event.newBalance.minorUnits)
+                node.put("reason", event.reason.name)
+                if (event.counterpartyUuid == null) node.putNull("counterpartyUuid") else node.put("counterpartyUuid", event.counterpartyUuid.toString())
+                if (event.counterpartyName == null) node.putNull("counterpartyName") else node.put("counterpartyName", event.counterpartyName)
+                if (event.actorUuid == null) node.putNull("actorUuid") else node.put("actorUuid", event.actorUuid.toString())
+                node.put("sourceServerId", event.sourceServerId)
+            }
             else -> throw UnsupportedEventTypeException(event.metadata.eventType)
         }
         return node
@@ -186,6 +214,16 @@ class NetworkEventSerializer(
     private fun JsonNode.nullableUuid(field: String): UUID? = get(field)?.takeUnless(JsonNode::isNull)?.textValue()?.let(UUID::fromString)
     private fun JsonNode.nullableInstant(field: String): Instant? = get(field)?.takeUnless(JsonNode::isNull)?.textValue()?.let(Instant::parse)
     private fun JsonNode.nullableText(field: String): String? = get(field)?.takeUnless(JsonNode::isNull)?.textValue()
+    private fun JsonNode.money(field: String): Money {
+        val node = get(field) ?: throw IllegalArgumentException("Event payload is missing '$field'")
+        val minorUnits = when {
+            node.isIntegralNumber -> node.longValue()
+            node.isTextual -> node.textValue().toLongOrNull()
+                ?: throw IllegalArgumentException("Event payload '$field' is not a minor-unit amount")
+            else -> throw IllegalArgumentException("Event payload '$field' is not a minor-unit amount")
+        }
+        return Money.ofMinor(minorUnits)
+    }
 
     private fun ObjectNode.putModeration(targetId: UUID, targetName: String, actionId: UUID, actorId: UUID?, actorName: String, reason: String?, createdAt: Instant, expiresAt: Instant?, serverId: String) {
         put("targetId", targetId.toString()); put("targetName", targetName); put("actionId", actionId.toString())
