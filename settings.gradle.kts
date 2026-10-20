@@ -26,6 +26,7 @@ include(
     "modules:chat",
     "modules:display",
     "modules:economy",
+    "modules:server-transfer",
     "modules:social",
     "modules:stats",
     "modules:auction-house",

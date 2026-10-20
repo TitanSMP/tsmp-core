@@ -121,8 +121,106 @@ class TitanSmpConfigLoader {
                     attemptWindowSeconds = integer("discord.linking.attempt-window-seconds", "TITANSMP_DISCORD_LINK_ATTEMPT_WINDOW_SECONDS", 60),
                 ),
             ),
+            serverTransfer = loadServerTransfer(properties, environment),
         )
     }
+
+    private fun loadServerTransfer(
+        properties: Properties,
+        environment: Map<String, String>,
+    ): ServerTransferConfig {
+        fun value(key: String, variable: String, default: String): String =
+            environment[variable]?.takeIf(String::isNotBlank)?.trim()
+                ?: properties.getProperty(key)?.takeIf(String::isNotBlank)?.trim()
+                ?: default
+
+        fun integer(key: String, variable: String, default: Int): Int =
+            value(key, variable, default.toString()).toIntOrNull()
+                ?: throw ConfigurationException("Invalid integer for '$key' (or '$variable')")
+
+        fun longValue(key: String, variable: String, default: Long): Long =
+            value(key, variable, default.toString()).toLongOrNull()
+                ?: throw ConfigurationException("Invalid integer for '$key' (or '$variable')")
+
+        fun boolean(key: String, variable: String, default: Boolean): Boolean =
+            value(key, variable, default.toString()).toBooleanStrictOrConfigError(key)
+
+        val typeProperties = linkedMapOf<String, MutableTypeSettings>()
+        val backendProperties = linkedMapOf<String, String>()
+        val aliases = linkedMapOf<String, String>()
+        val typePrefix = "server-transfer.types."
+        val backendPrefix = "server-transfer.backends."
+        val aliasPrefix = "server-transfer.aliases."
+        val typePattern = Regex("^server-transfer\\.types\\.([a-z0-9][a-z0-9_-]{0,63})\\.(enabled|max-players)$")
+        val backendPattern = Regex("^server-transfer\\.backends\\.([A-Za-z0-9_.-]{1,64})\\.type$")
+        val aliasPattern = Regex("^server-transfer\\.aliases\\.([a-z0-9][a-z0-9_-]{0,63})$")
+
+        properties.stringPropertyNames().sorted().forEach { key ->
+            when {
+                key.startsWith(typePrefix) -> {
+                    val match = typePattern.matchEntire(key)
+                        ?: throw ConfigurationException("Invalid server transfer type property '$key'")
+                    val type = match.groupValues[1]
+                    val normalized = type.lowercase()
+                    if (typeProperties.keys.none { it.equals(normalized, ignoreCase = true) }) {
+                        typeProperties[normalized] = MutableTypeSettings()
+                    }
+                    val settings = typeProperties.getValue(normalized)
+                    val raw = properties.getProperty(key).trim()
+                    when (match.groupValues[2]) {
+                        "enabled" -> settings.enabled = raw.toBooleanStrictOrConfigError(key)
+                        "max-players" -> settings.maxPlayers = raw.toIntOrNull()
+                            ?: throw ConfigurationException("Invalid integer for '$key'")
+                    }
+                }
+                key.startsWith(backendPrefix) -> {
+                    val match = backendPattern.matchEntire(key)
+                        ?: throw ConfigurationException("Invalid server transfer backend property '$key'")
+                    val backend = match.groupValues[1]
+                    if (backendProperties.keys.any { it.equals(backend, ignoreCase = true) }) {
+                        throw ConfigurationException("Duplicate backend mapping for '$backend' (backend names are case-insensitive)")
+                    }
+                    val type = properties.getProperty(key).trim().lowercase()
+                    if (type.isBlank()) throw ConfigurationException("Backend '$backend' must reference a server type")
+                    backendProperties[backend] = type
+                }
+                key.startsWith(aliasPrefix) -> {
+                    val match = aliasPattern.matchEntire(key)
+                        ?: throw ConfigurationException("Invalid server transfer alias property '$key'")
+                    val alias = match.groupValues[1]
+                    if (aliases.containsKey(alias)) {
+                        throw ConfigurationException("Duplicate server transfer alias '$alias'")
+                    }
+                    val type = properties.getProperty(key).trim().lowercase()
+                    if (type.isBlank()) throw ConfigurationException("Alias '$alias' must reference a server type")
+                    aliases[alias] = type
+                }
+            }
+        }
+
+        val types = typeProperties.mapValues { (type, settings) ->
+            val maxPlayers = settings.maxPlayers
+                ?: throw ConfigurationException("Missing 'server-transfer.types.$type.max-players'")
+            ServerTransferTypeConfig(settings.enabled, maxPlayers)
+        }
+        val backends = backendProperties.mapValues { (_, type) -> ServerTransferBackendConfig(type) }
+
+        return ServerTransferConfig(
+            enabled = boolean("server-transfer.enabled", "TITANSMP_SERVER_TRANSFER_ENABLED", false),
+            defaultPriority = integer("server-transfer.default-priority", "TITANSMP_SERVER_TRANSFER_DEFAULT_PRIORITY", 0),
+            actionbarIntervalMs = longValue("server-transfer.queue.actionbar-interval-ms", "TITANSMP_SERVER_TRANSFER_ACTIONBAR_INTERVAL_MS", 1_000),
+            reservationTimeoutMs = longValue("server-transfer.queue.reservation-timeout-ms", "TITANSMP_SERVER_TRANSFER_RESERVATION_TIMEOUT_MS", 5_000),
+            processingIntervalMs = longValue("server-transfer.queue.processing-interval-ms", "TITANSMP_SERVER_TRANSFER_PROCESSING_INTERVAL_MS", 1_000),
+            aliases = aliases,
+            types = types,
+            backends = backends,
+        )
+    }
+
+    private data class MutableTypeSettings(
+        var enabled: Boolean = true,
+        var maxPlayers: Int? = null,
+    )
 }
 
 private fun String.toBooleanStrictOrConfigError(key: String): Boolean = try {

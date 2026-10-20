@@ -8,6 +8,7 @@ dependencies {
     implementation(project(":modules:data-bridge"))
     implementation(project(":modules:moderation"))
     implementation(project(":modules:display"))
+    implementation(project(":modules:server-transfer"))
     runtimeOnly(project(":modules:ender-chest")) // Includes the already-applied Flyway V2 migration in the proxy classpath.
     runtimeOnly(project(":modules:economy")) // Includes the already-applied Flyway V6 economy migration in the proxy classpath.
     compileOnly("com.velocitypowered:velocity-api:4.2.1-SNAPSHOT")

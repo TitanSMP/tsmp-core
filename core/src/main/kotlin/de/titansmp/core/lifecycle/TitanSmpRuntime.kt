@@ -7,6 +7,7 @@ import de.titansmp.core.config.DatabaseConfig
 import de.titansmp.core.config.ChatConfig
 import de.titansmp.core.config.DiscordConfig
 import de.titansmp.core.config.RedisConfig
+import de.titansmp.core.config.ServerTransferConfig
 import de.titansmp.core.config.TitanSmpConfig
 import de.titansmp.core.config.TitanSmpConfigLoader
 import de.titansmp.core.database.DatabaseMigrator
@@ -54,6 +55,10 @@ class TitanSmpRuntime(
         private set
     @Volatile var discordConfig: DiscordConfig = DiscordConfig()
         private set
+    @Volatile var serverTransferConfig: ServerTransferConfig = ServerTransferConfig()
+        private set
+    @Volatile var networkId: String = "titansmp"
+        private set
 
     /** Stateless facade over the same shared database pool used by every core repository. */
     fun playerService(): PlayerService {
@@ -72,6 +77,12 @@ class TitanSmpRuntime(
         return requireNotNull(databaseService).dataSource
     }
 
+    /** Shared Redis command connection for transient network coordination such as server queues. */
+    fun redisService(): RedisService {
+        check(state == RuntimeState.READY) { "TitanSMP runtime must be ready before using Redis services" }
+        return requireNotNull(this.redisService)
+    }
+
     @Synchronized
     fun start(): NetworkServer {
         check(state == RuntimeState.STOPPED) { "TitanSMP runtime is already starting or ready" }
@@ -83,6 +94,8 @@ class TitanSmpRuntime(
             playerTransferTimeoutMs = configuration.playerTransferTimeoutMs
             chatConfig = configuration.chat
             discordConfig = configuration.discord
+            serverTransferConfig = configuration.serverTransfer
+            networkId = configuration.networkId
             val server = ConfiguredNetworkServer(configuration.serverIdentity, configuration.networkName)
             networkServer = server
             logger.info(

@@ -3,11 +3,16 @@ package de.titansmp.velocity
 import com.google.inject.Inject
 import com.velocitypowered.api.event.EventTask
 import com.velocitypowered.api.event.Subscribe
+import com.velocitypowered.api.event.player.ServerConnectedEvent
 import com.velocitypowered.api.event.player.ServerPreConnectEvent
+import com.velocitypowered.api.event.connection.DisconnectEvent
 import com.velocitypowered.api.event.connection.LoginEvent
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent
+import com.velocitypowered.api.event.proxy.server.ServerRegisteredEvent
+import com.velocitypowered.api.event.proxy.server.ServerUnregisteredEvent
 import com.velocitypowered.api.plugin.Plugin
 import com.velocitypowered.api.proxy.ProxyServer
+import com.velocitypowered.api.scheduler.ScheduledTask
 import de.titansmp.api.databridge.PlayerTransferFailed
 import de.titansmp.api.databridge.PlayerTransferCompleted
 import de.titansmp.api.databridge.PlayerTransferPrepare
@@ -25,7 +30,13 @@ import de.titansmp.core.lifecycle.TitanSmpRuntime
 import de.titansmp.core.moderation.DefaultModerationService
 import de.titansmp.core.moderation.JdbcModerationRepository
 import de.titansmp.core.moderation.LuckPermsModerationPermissionService
+import de.titansmp.core.servertransfer.DefaultServerTransferService
+import de.titansmp.core.servertransfer.LuckPermsQueuePriorityResolver
+import de.titansmp.core.servertransfer.RedisQueueStore
 import de.titansmp.velocity.display.VelocityTabListModule
+import de.titansmp.velocity.servertransfer.VelocityBackendDirectory
+import de.titansmp.velocity.servertransfer.VelocityPlayerConnectionGateway
+import de.titansmp.velocity.servertransfer.VelocityServerTransferCommands
 import de.titansmp.api.moderation.PlayerBanned
 import de.titansmp.api.moderation.PlayerKicked
 import de.titansmp.api.moderation.PlayerMuted
@@ -59,6 +70,9 @@ class TitanSmpVelocityPlugin @Inject constructor(
     @Volatile private var displayService: DefaultPlayerDisplayService? = null
     private var displayListener: LuckPermsDisplayListener? = null
     private var tabListModule: VelocityTabListModule? = null
+    @Volatile private var serverTransfer: DefaultServerTransferService? = null
+    private var backendDirectory: VelocityBackendDirectory? = null
+    private val transferTasks = mutableListOf<ScheduledTask>()
     private val moderationExecutor = java.util.concurrent.Executors.newFixedThreadPool(2) { task ->
         Thread(task, "titansmp-velocity-moderation-db").apply { isDaemon = true }
     }
@@ -106,10 +120,48 @@ class TitanSmpVelocityPlugin @Inject constructor(
             subscriptions += bus.subscribe(PlayerMuted.TYPE, EventListener(::onModerationEvent))
             subscriptions += bus.subscribe(PlayerUnmuted.TYPE, EventListener(::onModerationEvent))
             subscriptions += bus.subscribe(PlayerKicked.TYPE, EventListener(::onModerationEvent))
+            val transferConfig = started.serverTransferConfig
+            if (transferConfig.enabled) {
+                val directory = VelocityBackendDirectory(proxy, transferConfig, logger)
+                val service = DefaultServerTransferService(
+                    config = transferConfig,
+                    directory = directory,
+                    gateway = VelocityPlayerConnectionGateway(proxy),
+                    queueStore = RedisQueueStore(started.redisService(), started.networkId),
+                    priorityResolver = LuckPermsQueuePriorityResolver(luckPerms, transferConfig.defaultPriority),
+                    eventBus = bus,
+                    serverId = proxyServerId,
+                )
+                backendDirectory = directory
+                serverTransfer = service
+                VelocityServerTransferCommands(proxy, this, service, transferConfig, logger).register()
+                directory.refresh().whenComplete { _, failure ->
+                    if (failure != null) logger.warn("Initial backend availability refresh failed", failure)
+                }
+                transferTasks += proxy.scheduler.buildTask(this, Runnable { service.processQueues() })
+                    .delay(transferConfig.processingIntervalMs, TimeUnit.MILLISECONDS)
+                    .repeat(transferConfig.processingIntervalMs, TimeUnit.MILLISECONDS)
+                    .schedule()
+                transferTasks += proxy.scheduler.buildTask(this, Runnable { directory.refresh() })
+                    .delay(5, TimeUnit.SECONDS)
+                    .repeat(10, TimeUnit.SECONDS)
+                    .schedule()
+                logger.info(
+                    "TitanSMP server transfer queues ready; types={} backends={}",
+                    transferConfig.enabledTypes(),
+                    transferConfig.backends.keys.sorted(),
+                )
+            } else {
+                logger.info("TitanSMP server transfer queues are disabled")
+            }
             logger.info("TitanSMP Velocity transfer coordinator ready as {}", proxyServerId)
         } catch (failure: Throwable) {
             subscriptions.forEach(EventSubscription::close)
             subscriptions.clear()
+            cancelTransferTasks()
+            try { serverTransfer?.close() } catch (closeFailure: Throwable) { failure.addSuppressed(closeFailure) }
+            serverTransfer = null
+            backendDirectory = null
             try { tabListModule?.close() } catch (closeFailure: Throwable) { failure.addSuppressed(closeFailure) }
             tabListModule = null
             try { displayListener?.close() } catch (closeFailure: Throwable) { failure.addSuppressed(closeFailure) }
@@ -157,6 +209,28 @@ class TitanSmpVelocityPlugin @Inject constructor(
             else -> return
         }
         proxy.getPlayer(targetId).ifPresent { it.disconnect(net.kyori.adventure.text.Component.text(reason)) }
+    }
+
+    @Subscribe
+    fun onServerConnected(event: ServerConnectedEvent) {
+        serverTransfer?.playerConnected(event.player.uniqueId, event.server.serverInfo.name)
+        backendDirectory?.refresh()
+    }
+
+    @Subscribe
+    fun onDisconnect(event: DisconnectEvent) {
+        serverTransfer?.playerDisconnected(event.player.uniqueId)
+    }
+
+    @Subscribe
+    fun onServerRegistered(event: ServerRegisteredEvent) {
+        backendDirectory?.refresh()
+        serverTransfer?.processQueues()
+    }
+
+    @Subscribe
+    fun onServerUnregistered(event: ServerUnregisteredEvent) {
+        backendDirectory?.refresh()
     }
 
     @Subscribe
@@ -279,6 +353,10 @@ class TitanSmpVelocityPlugin @Inject constructor(
     fun onProxyShutdown(event: com.velocitypowered.api.event.proxy.ProxyShutdownEvent) {
         subscriptions.forEach(EventSubscription::close)
         subscriptions.clear()
+        cancelTransferTasks()
+        try { serverTransfer?.close() } catch (failure: Exception) { logger.error("TitanSMP server transfer shutdown failed", failure) }
+        serverTransfer = null
+        backendDirectory = null
         pending.values.toList().forEach { fail(it, eventBus, "proxy-shutdown") }
         try { tabListModule?.close() } catch (failure: Exception) { logger.error("TitanSMP Velocity TAB shutdown failed", failure) }
         tabListModule = null
@@ -291,6 +369,13 @@ class TitanSmpVelocityPlugin @Inject constructor(
         moderation = null
         moderationExecutor.shutdown()
         eventBus = null
+    }
+
+    private fun cancelTransferTasks() {
+        transferTasks.forEach { task ->
+            try { task.cancel() } catch (failure: Exception) { logger.debug("Could not cancel transfer task", failure) }
+        }
+        transferTasks.clear()
     }
 
     private data class PendingTransfer(

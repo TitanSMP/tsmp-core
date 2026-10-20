@@ -26,6 +26,12 @@ import de.titansmp.api.discord.DiscordAccountUnlinked
 import de.titansmp.api.economy.EconomyBalanceChanged
 import de.titansmp.api.economy.EconomyReason
 import de.titansmp.api.economy.Money
+import de.titansmp.api.servertransfer.ServerQueueLeaveReason
+import de.titansmp.api.servertransfer.ServerQueueLeft
+import de.titansmp.api.servertransfer.ServerQueueTransferCompleted
+import de.titansmp.api.servertransfer.ServerQueueTransferFailed
+import de.titansmp.api.servertransfer.ServerQueueTransferStarted
+import de.titansmp.api.servertransfer.ServerQueueUpdated
 import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
@@ -176,6 +182,21 @@ class NetworkEventSerializerTest {
         events.forEach { event ->
             val decoded = serializer.deserialize(serializer.serialize(EventEnvelope(event))).event
             assertEquals(event, decoded)
+        }
+    }
+
+    @Test fun `server queue events round trip without platform types`() {
+        val player = UUID.randomUUID()
+        val reservation = UUID.randomUUID()
+        val events = listOf(
+            ServerQueueUpdated(metadata.copy(eventType = ServerQueueUpdated.TYPE), player, "lobby", 5, 20, 2),
+            ServerQueueLeft(metadata.copy(eventType = ServerQueueLeft.TYPE), player, "lobby", ServerQueueLeaveReason.TRANSFERRED),
+            ServerQueueTransferStarted(metadata.copy(eventType = ServerQueueTransferStarted.TYPE), player, "lobby", "lobby-02", reservation),
+            ServerQueueTransferCompleted(metadata.copy(eventType = ServerQueueTransferCompleted.TYPE), player, "lobby", "lobby-02", reservation),
+            ServerQueueTransferFailed(metadata.copy(eventType = ServerQueueTransferFailed.TYPE), player, "lobby", "lobby-02", reservation, "connection-rejected"),
+        )
+        events.forEach { event ->
+            assertEquals(event, serializer.deserialize(serializer.serialize(EventEnvelope(event))).event)
         }
     }
 

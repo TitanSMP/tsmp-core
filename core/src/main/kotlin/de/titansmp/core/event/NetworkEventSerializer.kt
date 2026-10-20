@@ -32,6 +32,12 @@ import de.titansmp.api.discord.DiscordAccountUnlinked
 import de.titansmp.api.economy.EconomyBalanceChanged
 import de.titansmp.api.economy.EconomyReason
 import de.titansmp.api.economy.Money
+import de.titansmp.api.servertransfer.ServerQueueLeaveReason
+import de.titansmp.api.servertransfer.ServerQueueLeft
+import de.titansmp.api.servertransfer.ServerQueueTransferCompleted
+import de.titansmp.api.servertransfer.ServerQueueTransferFailed
+import de.titansmp.api.servertransfer.ServerQueueTransferStarted
+import de.titansmp.api.servertransfer.ServerQueueUpdated
 import java.time.Instant
 import java.util.UUID
 
@@ -111,6 +117,42 @@ class NetworkEventSerializer(
                 payload.nullableText("counterpartyName"),
                 payload.nullableUuid("actorUuid"),
                 payload.text("sourceServerId"),
+            )
+            ServerQueueUpdated.TYPE -> ServerQueueUpdated(
+                metadata,
+                payload.uuid("playerUuid"),
+                payload.text("serverType"),
+                payload.path("position").intValue(),
+                payload.path("size").intValue(),
+                payload.path("priority").intValue(),
+            )
+            ServerQueueLeft.TYPE -> ServerQueueLeft(
+                metadata,
+                payload.uuid("playerUuid"),
+                payload.text("serverType"),
+                ServerQueueLeaveReason.valueOf(payload.text("reason")),
+            )
+            ServerQueueTransferStarted.TYPE -> ServerQueueTransferStarted(
+                metadata,
+                payload.uuid("playerUuid"),
+                payload.text("serverType"),
+                payload.text("targetServerId"),
+                payload.uuid("reservationId"),
+            )
+            ServerQueueTransferCompleted.TYPE -> ServerQueueTransferCompleted(
+                metadata,
+                payload.uuid("playerUuid"),
+                payload.text("serverType"),
+                payload.text("targetServerId"),
+                payload.uuid("reservationId"),
+            )
+            ServerQueueTransferFailed.TYPE -> ServerQueueTransferFailed(
+                metadata,
+                payload.uuid("playerUuid"),
+                payload.text("serverType"),
+                payload.text("targetServerId"),
+                payload.uuid("reservationId"),
+                payload.text("reason"),
             )
             else -> throw UnknownEventTypeException(type)
         }
@@ -197,6 +239,37 @@ class NetworkEventSerializer(
                 if (event.counterpartyName == null) node.putNull("counterpartyName") else node.put("counterpartyName", event.counterpartyName)
                 if (event.actorUuid == null) node.putNull("actorUuid") else node.put("actorUuid", event.actorUuid.toString())
                 node.put("sourceServerId", event.sourceServerId)
+            }
+            is ServerQueueUpdated -> {
+                node.put("playerUuid", event.playerUuid.toString())
+                node.put("serverType", event.serverType)
+                node.put("position", event.position)
+                node.put("size", event.size)
+                node.put("priority", event.priority)
+            }
+            is ServerQueueLeft -> {
+                node.put("playerUuid", event.playerUuid.toString())
+                node.put("serverType", event.serverType)
+                node.put("reason", event.reason.name)
+            }
+            is ServerQueueTransferStarted -> {
+                node.put("playerUuid", event.playerUuid.toString())
+                node.put("serverType", event.serverType)
+                node.put("targetServerId", event.targetServerId)
+                node.put("reservationId", event.reservationId.toString())
+            }
+            is ServerQueueTransferCompleted -> {
+                node.put("playerUuid", event.playerUuid.toString())
+                node.put("serverType", event.serverType)
+                node.put("targetServerId", event.targetServerId)
+                node.put("reservationId", event.reservationId.toString())
+            }
+            is ServerQueueTransferFailed -> {
+                node.put("playerUuid", event.playerUuid.toString())
+                node.put("serverType", event.serverType)
+                node.put("targetServerId", event.targetServerId)
+                node.put("reservationId", event.reservationId.toString())
+                node.put("reason", event.reason)
             }
             else -> throw UnsupportedEventTypeException(event.metadata.eventType)
         }

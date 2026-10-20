@@ -24,6 +24,7 @@ import de.titansmp.core.economy.DefaultEconomyService
 import de.titansmp.core.economy.JdbcEconomyRepository
 import de.titansmp.core.economy.LuckPermsEconomyPermissionService
 import de.titansmp.paper.economy.EconomyPaperModule
+import de.titansmp.paper.servertransfer.ServerQueuePaperModule
 import net.luckperms.api.LuckPerms
 import net.luckperms.api.util.Tristate
 import org.bukkit.entity.Player
@@ -45,6 +46,7 @@ class TitanSmpPaperPlugin : JavaPlugin() {
     @Volatile private var displayService: DefaultPlayerDisplayService? = null
     private var displayListener: LuckPermsDisplayListener? = null
     @Volatile private var economyModule: EconomyPaperModule? = null
+    @Volatile private var serverQueueModule: ServerQueuePaperModule? = null
     @Volatile private var moderationPersistence: java.util.concurrent.ExecutorService? = null
     @Volatile private var economyPersistence: java.util.concurrent.ExecutorService? = null
     private val runtimeReady = CompletableFuture<PaperPlayerIdentityRuntime>()
@@ -137,6 +139,16 @@ class TitanSmpPaperPlugin : JavaPlugin() {
                             serverIdentity.identity.id,
                             economyExecutor,
                         ).also { it.register() }
+                        if (startedRuntime.serverTransferConfig.enabled) {
+                            serverQueueModule = ServerQueuePaperModule(
+                                this,
+                                startedRuntime.eventBus(),
+                                startedRuntime.serverTransferConfig,
+                                logger,
+                            ).also { it.register() }
+                        } else {
+                            logger.info("Server transfer queues are disabled; queue ActionBars are not registered.")
+                        }
                         val display = DefaultPlayerDisplayService(
                             LuckPermsDisplayProvider(luckPerms),
                             eventBus = startedRuntime.eventBus(),
@@ -235,6 +247,8 @@ class TitanSmpPaperPlugin : JavaPlugin() {
         discordModule = null
         economyModule?.close()
         economyModule = null
+        serverQueueModule?.close()
+        serverQueueModule = null
         displayModule?.close()
         displayModule = null
         displayListener?.close()

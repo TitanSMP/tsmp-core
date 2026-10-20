@@ -151,6 +151,128 @@ class TitanSmpConfigLoaderTest {
     }
 
     @Test
+    fun `loads server transfer types backends and aliases from configuration`() {
+        val file = writeConfig()
+        Files.writeString(
+            file,
+            Files.readString(file) + """
+
+                server-transfer.enabled=true
+                server-transfer.default-priority=1
+                server-transfer.queue.reservation-timeout-ms=7000
+                server-transfer.aliases.lobby=lobby
+                server-transfer.aliases.hub=lobby
+                server-transfer.types.lobby.enabled=true
+                server-transfer.types.lobby.max-players=100
+                server-transfer.types.smp.enabled=true
+                server-transfer.types.smp.max-players=50
+                server-transfer.backends.lobby-01.type=lobby
+                server-transfer.backends.smp-01.type=smp
+            """.trimIndent(),
+        )
+
+        val transfer = TitanSmpConfigLoader().load(file, emptyMap()).serverTransfer
+
+        assertTrue(transfer.enabled)
+        assertEquals(1, transfer.defaultPriority)
+        assertEquals(7_000L, transfer.reservationTimeoutMs)
+        assertEquals(listOf("lobby", "smp"), transfer.enabledTypes())
+        assertEquals("lobby", transfer.typeForBackend("lobby-01"))
+        assertEquals("smp", transfer.typeForBackend("smp-01"))
+        assertNull(transfer.typeForBackend("unknown-01"))
+        assertEquals("lobby", transfer.aliasTarget("hub"))
+    }
+
+    @Test
+    fun `rejects a backend that maps to an unknown server type`() {
+        val file = writeConfig()
+        Files.writeString(
+            file,
+            Files.readString(file) + """
+
+                server-transfer.enabled=true
+                server-transfer.types.lobby.enabled=true
+                server-transfer.types.lobby.max-players=100
+                server-transfer.backends.lobby-01.type=missing
+            """.trimIndent(),
+        )
+
+        val failure = assertFailsWith<ConfigurationException> { TitanSmpConfigLoader().load(file, emptyMap()) }
+        assertTrue(failure.message!!.contains("unknown server type"))
+    }
+
+    @Test
+    fun `rejects a backend that maps to a disabled server type`() {
+        val file = writeConfig()
+        Files.writeString(
+            file,
+            Files.readString(file) + """
+
+                server-transfer.enabled=true
+                server-transfer.types.lobby.enabled=false
+                server-transfer.types.lobby.max-players=100
+                server-transfer.backends.lobby-01.type=lobby
+            """.trimIndent(),
+        )
+
+        val failure = assertFailsWith<ConfigurationException> { TitanSmpConfigLoader().load(file, emptyMap()) }
+        assertTrue(failure.message!!.contains("disabled server type"))
+    }
+
+    @Test
+    fun `rejects a server type without a capacity`() {
+        val file = writeConfig()
+        Files.writeString(
+            file,
+            Files.readString(file) + """
+
+                server-transfer.enabled=true
+                server-transfer.types.lobby.enabled=true
+            """.trimIndent(),
+        )
+
+        val failure = assertFailsWith<ConfigurationException> { TitanSmpConfigLoader().load(file, emptyMap()) }
+        assertTrue(failure.message!!.contains("max-players"))
+    }
+
+    @Test
+    fun `rejects an alias for an unknown server type`() {
+        val file = writeConfig()
+        Files.writeString(
+            file,
+            Files.readString(file) + """
+
+                server-transfer.enabled=true
+                server-transfer.types.lobby.enabled=true
+                server-transfer.types.lobby.max-players=100
+                server-transfer.aliases.hub=smp
+            """.trimIndent(),
+        )
+
+        val failure = assertFailsWith<ConfigurationException> { TitanSmpConfigLoader().load(file, emptyMap()) }
+        assertTrue(failure.message!!.contains("unknown server type"))
+    }
+
+    @Test
+    fun `rejects an invalid server transfer priority and capacity`() {
+        val invalidPriority = writeConfig()
+        Files.writeString(invalidPriority, Files.readString(invalidPriority) + "\nserver-transfer.default-priority=-1\n")
+        assertFailsWith<IllegalArgumentException> { TitanSmpConfigLoader().load(invalidPriority, emptyMap()) }
+
+        val invalidCapacity = writeConfig()
+        Files.writeString(
+            invalidCapacity,
+            Files.readString(invalidCapacity) + """
+
+                server-transfer.enabled=true
+                server-transfer.types.lobby.enabled=true
+                server-transfer.types.lobby.max-players=0
+            """.trimIndent(),
+        )
+        assertFailsWith<IllegalArgumentException> { TitanSmpConfigLoader().load(invalidCapacity, emptyMap()) }
+    }
+
+    @Test
     fun `allows redis without a password`() {
         val configuration = TitanSmpConfigLoader().load(writeConfig(), emptyMap())
 
