@@ -4,6 +4,7 @@ import de.titansmp.api.event.EventEnvelope
 import de.titansmp.api.event.EventMetadata
 import de.titansmp.api.event.EventType
 import de.titansmp.api.friends.*
+import de.titansmp.api.clans.*
 import de.titansmp.api.databridge.PlayerStateUpdated
 import de.titansmp.api.databridge.PlayerTransferPrepare
 import de.titansmp.api.databridge.PlayerTransferReady
@@ -73,6 +74,18 @@ class NetworkEventSerializerTest {
             FriendUnblocked(metadata.copy(eventType = FriendUnblocked.TYPE), alice, bob),
         )
         events.forEach { assertEquals(it, serializer.deserialize(serializer.serialize(EventEnvelope(it))).event) }
+    }
+
+    @Test
+    fun `clan events and chat round trip`() {
+        val clan = UUID.randomUUID(); val alice = UUID.randomUUID(); val bob = UUID.randomUUID()
+        ClanEventAction.entries.forEach { action ->
+            val type=ClanChanged.TYPES.getValue(action)
+            val event=ClanChanged(metadata.copy(eventType=type),action,clan,alice,bob,ClanRole.MODERATOR,"Example","EX",listOf(alice,bob))
+            assertEquals(event,serializer.deserialize(serializer.serialize(EventEnvelope(event))).event)
+        }
+        val chat=ClanChatMessage(metadata.copy(eventType=ClanChatMessage.TYPE),clan,"EX",ClanColorMode.RAINBOW,"blue",alice,"Alice","Hello")
+        assertEquals(chat,serializer.deserialize(serializer.serialize(EventEnvelope(chat))).event)
     }
 
     @Test

@@ -50,6 +50,10 @@ commands:
     description: Manage your network friends
     usage: /friends [add|accept|reject|remove|block|unblock|requests|list]
     aliases: [friend]
+  clan:
+    description: Manage your network clan
+    usage: /clan [create|invite|accept|reject|promote|demote|kick|leave|invitations|chat|info|color|disband]
+    aliases: [c]
 permissions:
   titansmp.enderchest.rows.1:
     description: Grants access to one row of TitanSMP EnderChest storage

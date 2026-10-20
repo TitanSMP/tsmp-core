@@ -26,6 +26,11 @@ import de.titansmp.core.databridge.PlayerTransferRegistry
 import de.titansmp.core.display.DefaultPlayerDisplayService
 import de.titansmp.core.display.LuckPermsDisplayListener
 import de.titansmp.core.display.LuckPermsDisplayProvider
+import de.titansmp.core.clans.ClanDisplayRefreshListener
+import de.titansmp.core.clans.ClanDisplaySuffixProvider
+import de.titansmp.core.clans.ClanValidationConfig
+import de.titansmp.core.clans.DefaultClanService
+import de.titansmp.core.clans.JdbcClanRepository
 import de.titansmp.core.lifecycle.TitanSmpRuntime
 import de.titansmp.core.moderation.DefaultModerationService
 import de.titansmp.core.moderation.JdbcModerationRepository
@@ -69,6 +74,7 @@ class TitanSmpVelocityPlugin @Inject constructor(
     @Volatile private var moderation: de.titansmp.api.moderation.ModerationService? = null
     @Volatile private var displayService: DefaultPlayerDisplayService? = null
     private var displayListener: LuckPermsDisplayListener? = null
+    private var clanDisplayRefresh: ClanDisplayRefreshListener? = null
     private var tabListModule: VelocityTabListModule? = null
     @Volatile private var serverTransfer: DefaultServerTransferService? = null
     private var backendDirectory: VelocityBackendDirectory? = null
@@ -95,13 +101,20 @@ class TitanSmpVelocityPlugin @Inject constructor(
                 logger = java.util.logging.Logger.getLogger("de.titansmp.velocity.moderation"),
             )
             val displayLogger = java.util.logging.Logger.getLogger("de.titansmp.velocity.display")
+            val clanConfig = started.clansConfig
+            val clans = if (clanConfig.enabled) DefaultClanService(
+                JdbcClanRepository(started.databaseDataSource()),bus,moderationExecutor,proxyServerId,
+                ClanValidationConfig(clanConfig.pageSize,clanConfig.invitationExpirationHours,clanConfig.nameMinLength,clanConfig.nameMaxLength,clanConfig.tagMinLength,clanConfig.tagMaxLength),
+            ) else null
             val display = DefaultPlayerDisplayService(
                 LuckPermsDisplayProvider(luckPerms),
+                suffixProviders = listOfNotNull(clans?.let(::ClanDisplaySuffixProvider)),
                 eventBus = bus,
                 serverId = proxyServerId,
                 logger = displayLogger,
             )
             displayService = display
+            clanDisplayRefresh = if (clans != null) ClanDisplayRefreshListener(bus,display) else null
             displayListener = LuckPermsDisplayListener(luckPerms, display, displayLogger)
             tabListModule = VelocityTabListModule(this, proxy, display, bus, logger).also { proxy.eventManager.register(this, it) }
             registry = PlayerTransferRegistry(cancelPublisher = { transfer, reason ->
@@ -166,6 +179,8 @@ class TitanSmpVelocityPlugin @Inject constructor(
             tabListModule = null
             try { displayListener?.close() } catch (closeFailure: Throwable) { failure.addSuppressed(closeFailure) }
             displayListener = null
+            try { clanDisplayRefresh?.close() } catch (closeFailure: Throwable) { failure.addSuppressed(closeFailure) }
+            clanDisplayRefresh = null
             try { displayService?.close() } catch (closeFailure: Throwable) { failure.addSuppressed(closeFailure) }
             displayService = null
             try { runtime?.close() } catch (closeFailure: Throwable) { failure.addSuppressed(closeFailure) }
@@ -362,6 +377,8 @@ class TitanSmpVelocityPlugin @Inject constructor(
         tabListModule = null
         try { displayListener?.close() } catch (failure: Exception) { logger.error("TitanSMP Velocity display shutdown failed", failure) }
         displayListener = null
+        try { clanDisplayRefresh?.close() } catch (failure: Exception) { logger.error("TitanSMP Velocity clan display shutdown failed", failure) }
+        clanDisplayRefresh = null
         try { displayService?.close() } catch (failure: Exception) { logger.error("TitanSMP Velocity display shutdown failed", failure) }
         displayService = null
         try { runtime?.close() } catch (failure: Exception) { logger.error("TitanSMP Velocity shutdown failed", failure) }

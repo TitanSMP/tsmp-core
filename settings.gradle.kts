@@ -35,6 +35,7 @@ include(
     "modules:scoreboard",
     "modules:discord",
     "modules:friends",
+    "modules:clans",
     "services:web-api",
     "services:discord-bot",
 )

@@ -16,6 +16,7 @@ class TitanSmpConfig(
     val serverTransfer: ServerTransferConfig = ServerTransferConfig(),
     val stats: StatsConfig = StatsConfig(),
     val friends: FriendsConfig = FriendsConfig(),
+    val clans: ClansConfig = ClansConfig(),
 ) {
     init {
         require(networkName.isNotBlank()) { "Network name must not be blank" }
@@ -29,6 +30,23 @@ class TitanSmpConfig(
 
 data class FriendsConfig(val enabled: Boolean = true, val pageSize: Int = 10) {
     init { require(pageSize in 1..100) { "friends.page-size must be between 1 and 100" } }
+}
+
+data class ClansConfig(
+    val enabled: Boolean = true,
+    val invitationExpirationHours: Long = 24,
+    val pageSize: Int = 10,
+    val nameMinLength: Int = 3,
+    val nameMaxLength: Int = 24,
+    val tagMinLength: Int = 2,
+    val tagMaxLength: Int = 8,
+) {
+    init {
+        require(invitationExpirationHours in 1..720) { "clans.invitation-expiration-hours must be between 1 and 720" }
+        require(pageSize in 1..100) { "clans.page-size must be between 1 and 100" }
+        require(nameMinLength in 1..nameMaxLength && nameMaxLength <= 24) { "Invalid clan name length range" }
+        require(tagMinLength in 1..tagMaxLength && tagMaxLength <= 8) { "Invalid clan tag length range" }
+    }
 }
 
 data class ChatConfig(

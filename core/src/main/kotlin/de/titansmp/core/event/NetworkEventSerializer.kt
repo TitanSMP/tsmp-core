@@ -41,6 +41,7 @@ import de.titansmp.api.servertransfer.ServerQueueUpdated
 import de.titansmp.api.stats.PlayerStats
 import de.titansmp.api.stats.PlayerStatsUpdated
 import de.titansmp.api.friends.*
+import de.titansmp.api.clans.*
 import java.time.Instant
 import java.util.UUID
 
@@ -82,6 +83,13 @@ class NetworkEventSerializer(
             FriendRemoved.TYPE -> FriendRemoved(metadata, payload.uuid("playerUuid"), payload.uuid("friendUuid"))
             FriendBlocked.TYPE -> FriendBlocked(metadata, payload.uuid("blockerUuid"), payload.uuid("blockedUuid"))
             FriendUnblocked.TYPE -> FriendUnblocked(metadata, payload.uuid("blockerUuid"), payload.uuid("blockedUuid"))
+            in ClanChanged.TYPES.values -> ClanChanged(
+                metadata, ClanChanged.TYPES.entries.first { it.value == type }.key,
+                payload.uuid("clanUuid"), payload.uuid("actorUuid"), payload.nullableUuid("targetUuid"),
+                payload.nullableText("role")?.let(ClanRole::valueOf), payload.text("clanName"), payload.text("clanTag"),
+                payload.path("affectedMembers").map { UUID.fromString(it.asText()) },
+            )
+            ClanChatMessage.TYPE -> ClanChatMessage(metadata, payload.uuid("clanUuid"), payload.text("clanTag"), ClanColorMode.valueOf(payload.text("colorMode")), payload.text("colorValue"), payload.uuid("senderUuid"), payload.text("senderName"), payload.text("message"))
             PlayerDisconnected.TYPE -> PlayerDisconnected(metadata, payload.uuid("playerId"), payload.text("serverId"))
             PlayerServerChanged.TYPE -> PlayerServerChanged(metadata, payload.uuid("playerId"), payload.text("previousServerId"), payload.text("newServerId"))
             PlayerBanned.TYPE -> PlayerBanned(metadata, payload.uuid("targetId"), payload.text("targetName"), payload.uuid("actionId"), payload.nullableUuid("actorId"), payload.text("actorName"), payload.text("reason"), payload.instant("createdAt"), payload.nullableInstant("expiresAt"), payload.text("serverId"))
@@ -195,6 +203,17 @@ class NetworkEventSerializer(
             is FriendRemoved -> { node.put("playerUuid", event.playerUuid.toString()); node.put("friendUuid", event.friendUuid.toString()) }
             is FriendBlocked -> { node.put("blockerUuid", event.blockerUuid.toString()); node.put("blockedUuid", event.blockedUuid.toString()) }
             is FriendUnblocked -> { node.put("blockerUuid", event.blockerUuid.toString()); node.put("blockedUuid", event.blockedUuid.toString()) }
+            is ClanChanged -> {
+                node.put("action", event.action.name); node.put("clanUuid", event.clanUuid.toString()); node.put("actorUuid", event.actorUuid.toString())
+                if (event.targetUuid == null) node.putNull("targetUuid") else node.put("targetUuid", event.targetUuid.toString())
+                event.role?.let { node.put("role",it.name) } ?: node.putNull("role")
+                node.put("clanName", event.clanName); node.put("clanTag", event.clanTag)
+                node.putArray("affectedMembers").also { array -> event.affectedMembers.forEach { array.add(it.toString()) } }
+            }
+            is ClanChatMessage -> {
+                node.put("clanUuid",event.clanUuid.toString()); node.put("clanTag",event.clanTag); node.put("colorMode",event.colorMode.name)
+                node.put("colorValue",event.colorValue); node.put("senderUuid",event.senderUuid.toString()); node.put("senderName",event.senderName); node.put("message",event.message)
+            }
             is PlayerConnected -> {
                 node.put("playerId", event.playerId.toString())
                 node.put("username", event.username)

@@ -35,6 +35,8 @@ import de.titansmp.paper.stats.StatsPaperModule
 import de.titansmp.core.friends.DefaultFriendsService
 import de.titansmp.core.friends.JdbcFriendsRepository
 import de.titansmp.paper.friends.FriendsPaperModule
+import de.titansmp.core.clans.*
+import de.titansmp.paper.clans.ClansPaperModule
 import net.luckperms.api.LuckPerms
 import net.luckperms.api.util.Tristate
 import org.bukkit.entity.Player
@@ -59,6 +61,8 @@ class TitanSmpPaperPlugin : JavaPlugin() {
     @Volatile private var serverQueueModule: ServerQueuePaperModule? = null
     @Volatile private var statsModule: StatsPaperModule? = null
     @Volatile private var friendsModule: FriendsPaperModule? = null
+    @Volatile private var clansModule: ClansPaperModule? = null
+    private var clanDisplayRefresh: ClanDisplayRefreshListener? = null
     @Volatile private var moderationPersistence: java.util.concurrent.ExecutorService? = null
     @Volatile private var economyPersistence: java.util.concurrent.ExecutorService? = null
     @Volatile private var statsPersistence: java.util.concurrent.ExecutorService? = null
@@ -126,6 +130,10 @@ class TitanSmpPaperPlugin : JavaPlugin() {
                             startedRuntime.eventBus(),
                             moderationExecutor,
                         )
+                        val friendDomainService = if (startedRuntime.friendsConfig.enabled || startedRuntime.clansConfig.enabled) {
+                            val friendsRepository = JdbcFriendsRepository(startedRuntime.databaseDataSource())
+                            DefaultFriendsService(friendsRepository, startedRuntime.eventBus(), moderationExecutor, serverIdentity.identity.id)
+                        } else null
                         moderationModule = ModerationPaperModule(
                             this,
                             moderationService,
@@ -192,13 +200,26 @@ class TitanSmpPaperPlugin : JavaPlugin() {
                         } else {
                             logger.info("TitanSMP statistics are disabled; no statistics listeners are registered.")
                         }
+                        val clanService = if (startedRuntime.clansConfig.enabled) {
+                            val cfg = startedRuntime.clansConfig
+                            DefaultClanService(
+                                JdbcClanRepository(startedRuntime.databaseDataSource()),
+                                startedRuntime.eventBus(),
+                                moderationExecutor,
+                                serverIdentity.identity.id,
+                                ClanValidationConfig(cfg.pageSize,cfg.invitationExpirationHours,cfg.nameMinLength,cfg.nameMaxLength,cfg.tagMinLength,cfg.tagMaxLength),
+                                friendDomainService,
+                            )
+                        } else null
                         val display = DefaultPlayerDisplayService(
                             LuckPermsDisplayProvider(luckPerms),
+                            suffixProviders = listOfNotNull(clanService?.let(::ClanDisplaySuffixProvider)),
                             eventBus = startedRuntime.eventBus(),
                             serverId = serverIdentity.identity.id,
                             logger = logger,
                         )
                         displayService = display
+                        clanDisplayRefresh = if (clanService != null) ClanDisplayRefreshListener(startedRuntime.eventBus(),display) else null
                         displayListener = LuckPermsDisplayListener(luckPerms, display, logger)
                         displayModule = PlayerDisplayPaperModule(this, display, startedRuntime.eventBus()).also { it.register() }
                         chatModule = ChatPaperModule(
@@ -215,15 +236,27 @@ class TitanSmpPaperPlugin : JavaPlugin() {
                             serverIdentity.identity.id,
                             moderationExecutor,
                         ).also { it.register() }
-                        if (startedRuntime.friendsConfig.enabled) {
+                        if (startedRuntime.friendsConfig.enabled && friendDomainService != null) {
                             val repository = JdbcFriendsRepository(startedRuntime.databaseDataSource())
                             friendsModule = FriendsPaperModule(
                                 this,
-                                DefaultFriendsService(repository, startedRuntime.eventBus(), moderationExecutor, serverIdentity.identity.id),
+                                friendDomainService,
                                 repository,
                                 startedRuntime.playerService(),
                                 startedRuntime.eventBus(),
                                 startedRuntime.friendsConfig.pageSize,
+                                moderationExecutor,
+                            ).also { it.register() }
+                        }
+                        if (clanService != null) {
+                            val cfg = startedRuntime.clansConfig
+                            clansModule = ClansPaperModule(
+                                this,
+                                clanService,
+                                startedRuntime.playerService(),
+                                startedRuntime.eventBus(),
+                                { player, node -> playerAdapter.getPermissionData(player).checkPermission(node) == Tristate.TRUE },
+                                cfg.pageSize,
                                 moderationExecutor,
                             ).also { it.register() }
                         }
@@ -300,6 +333,8 @@ class TitanSmpPaperPlugin : JavaPlugin() {
         chatModule = null
         friendsModule?.close()
         friendsModule = null
+        clansModule?.close()
+        clansModule = null
         discordModule?.close()
         discordModule = null
         economyModule?.close()
@@ -313,6 +348,8 @@ class TitanSmpPaperPlugin : JavaPlugin() {
         displayModule = null
         displayListener?.close()
         displayListener = null
+        clanDisplayRefresh?.close()
+        clanDisplayRefresh = null
         displayService?.close()
         displayService = null
         val moderationWorker = moderationPersistence

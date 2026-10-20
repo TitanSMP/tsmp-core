@@ -129,6 +129,15 @@ class TitanSmpConfigLoader {
                 enabled = value("friends.enabled", "TITANSMP_FRIENDS_ENABLED", "true").toBooleanStrictOrConfigError("friends.enabled"),
                 pageSize = integer("friends.page-size", "TITANSMP_FRIENDS_PAGE_SIZE", 10),
             ),
+            clans = ClansConfig(
+                enabled = value("clans.enabled", "TITANSMP_CLANS_ENABLED", "true").toBooleanStrictOrConfigError("clans.enabled"),
+                invitationExpirationHours = longValue("clans.invitation-expiration-hours", "TITANSMP_CLAN_INVITATION_EXPIRATION_HOURS", 24),
+                pageSize = integer("clans.page-size", "TITANSMP_CLANS_PAGE_SIZE", 10),
+                nameMinLength = integer("clans.name-min-length", "TITANSMP_CLAN_NAME_MIN_LENGTH", 3),
+                nameMaxLength = integer("clans.name-max-length", "TITANSMP_CLAN_NAME_MAX_LENGTH", 24),
+                tagMinLength = integer("clans.tag-min-length", "TITANSMP_CLAN_TAG_MIN_LENGTH", 2),
+                tagMaxLength = integer("clans.tag-max-length", "TITANSMP_CLAN_TAG_MAX_LENGTH", 8),
+            ),
         )
     }
 

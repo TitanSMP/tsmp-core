@@ -24,6 +24,7 @@ modules/
   scoreboard/
   discord/
   friends/
+  clans/
 services/
   web-api/
   discord-bot/
@@ -118,3 +119,7 @@ Player inventory map items use Paper's shared opaque item codec, but their refer
 ## Friends
 
 The new `modules:friends` feature stores canonical UUID friendships, directed requests, and directed blocks in MariaDB V8. Its Paper command surface is network-wide through the shared player identity service and EventBus; pair locks serialize mutations across backends. See [friends.md](friends.md).
+
+## Clans
+
+`modules:clans` provides the MariaDB-backed network clan service, transactional role/membership transitions, expiring invitations, and the existing `DisplaySuffixProvider` implementation. Paper owns the command/chat/notification surface; Velocity and Paper resolve clan tags through the existing display service and EventBus. Migration V9 follows the Friends V8 schema. See [clans.md](clans.md).
