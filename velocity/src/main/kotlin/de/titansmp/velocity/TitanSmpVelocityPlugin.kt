@@ -22,6 +22,8 @@ import de.titansmp.api.event.EventBus
 import de.titansmp.api.event.EventListener
 import de.titansmp.api.event.EventMetadata
 import de.titansmp.api.event.EventSubscription
+import de.titansmp.api.teleport.TeleportTransferRequested
+import de.titansmp.api.servertransfer.ServerTransferResult
 import de.titansmp.core.databridge.PlayerTransferRegistry
 import de.titansmp.core.display.DefaultPlayerDisplayService
 import de.titansmp.core.display.LuckPermsDisplayListener
@@ -128,6 +130,7 @@ class TitanSmpVelocityPlugin @Inject constructor(
             subscriptions += bus.subscribe(PlayerTransferTargetPrepared.TYPE, EventListener(::onTransferEvent))
             subscriptions += bus.subscribe(PlayerTransferFailed.TYPE, EventListener(::onTransferEvent))
             subscriptions += bus.subscribe(PlayerTransferCompleted.TYPE, EventListener(::onTransferEvent))
+            subscriptions += bus.subscribe(TeleportTransferRequested.TYPE, EventListener(::onTeleportTransferRequested))
             subscriptions += bus.subscribe(PlayerBanned.TYPE, EventListener(::onModerationEvent))
             subscriptions += bus.subscribe(PlayerUnbanned.TYPE, EventListener(::onModerationEvent))
             subscriptions += bus.subscribe(PlayerMuted.TYPE, EventListener(::onModerationEvent))
@@ -330,6 +333,32 @@ class TitanSmpVelocityPlugin @Inject constructor(
             }
             else -> Unit
         }
+    }
+
+    private fun onTeleportTransferRequested(envelope: de.titansmp.api.event.EventEnvelope) {
+        val event = envelope.event as? TeleportTransferRequested ?: return
+        val player = proxy.getPlayer(event.playerUuid).orElse(null) ?: return
+        val service = serverTransfer
+        if(service==null) {
+            clearTeleportState(event)
+            player.sendMessage(net.kyori.adventure.text.Component.text("Teleport transfer is unavailable."))
+            return
+        }
+        val transfer=event.targetServerId?.let { service.transferToServer(event.playerUuid,it) }
+            ?: service.requestJoin(event.playerUuid,requireNotNull(event.targetServerType))
+        transfer.whenComplete { result, failure ->
+            if(failure!=null || result is ServerTransferResult.Failed) {
+                clearTeleportState(event)
+                player.sendMessage(net.kyori.adventure.text.Component.text("Teleport transfer could not be completed."))
+            }
+        }
+    }
+
+    private fun clearTeleportState(event:TeleportTransferRequested) {
+        val redis=runtime?.redisService()?.commands ?: return
+        redis.del("titansmp:teleport:pending:${event.playerUuid}")
+        val normalizedScope=event.cooldownScope?.trim()?.lowercase() ?: "-"
+        redis.del("titansmp:teleport:cooldown:${event.cooldownOwnerUuid}:${event.cooldownCategory.name}:$normalizedScope")
     }
 
     private fun activateWhenPrepared(context: PendingTransfer) {

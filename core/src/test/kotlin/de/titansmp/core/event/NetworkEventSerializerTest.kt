@@ -5,6 +5,7 @@ import de.titansmp.api.event.EventMetadata
 import de.titansmp.api.event.EventType
 import de.titansmp.api.friends.*
 import de.titansmp.api.clans.*
+import de.titansmp.api.teleport.*
 import de.titansmp.api.databridge.PlayerStateUpdated
 import de.titansmp.api.databridge.PlayerTransferPrepare
 import de.titansmp.api.databridge.PlayerTransferReady
@@ -86,6 +87,18 @@ class NetworkEventSerializerTest {
         }
         val chat=ClanChatMessage(metadata.copy(eventType=ClanChatMessage.TYPE),clan,"EX",ClanColorMode.RAINBOW,"blue",alice,"Alice","Hello")
         assertEquals(chat,serializer.deserialize(serializer.serialize(EventEnvelope(chat))).event)
+    }
+
+    @Test fun `teleport transfer and request events round trip`() {
+        val player=UUID.randomUUID();val target=UUID.randomUUID();val operation=UUID.randomUUID()
+        val events=listOf(
+            TeleportTransferRequested(metadata.copy(eventType=TeleportTransferRequested.TYPE),operation,player,"survival-02",player,TeleportCooldownCategory.HOME,"base"),
+            TeleportTransferRequested(metadata.copy(eventType=TeleportTransferRequested.TYPE),UUID.randomUUID(),player,null,player,TeleportCooldownCategory.RTP,null,"survival"),
+            TeleportRequestCreated(metadata.copy(eventType=TeleportRequestCreated.TYPE),UUID.randomUUID(),player,target,"Alice",TeleportDirection.TARGET_TO_REQUESTER,Instant.parse("2026-08-01T12:31:45Z")),
+            TeleportRequestResolved(metadata.copy(eventType=TeleportRequestResolved.TYPE),UUID.randomUUID(),player,target,true),
+            TeleportLocationRequested(metadata.copy(eventType=TeleportLocationRequested.TYPE),UUID.randomUUID(),player,target),
+        )
+        events.forEach { assertEquals(it,serializer.deserialize(serializer.serialize(EventEnvelope(it))).event) }
     }
 
     @Test

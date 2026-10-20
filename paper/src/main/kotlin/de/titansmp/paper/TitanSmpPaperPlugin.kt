@@ -37,6 +37,9 @@ import de.titansmp.core.friends.JdbcFriendsRepository
 import de.titansmp.paper.friends.FriendsPaperModule
 import de.titansmp.core.clans.*
 import de.titansmp.paper.clans.ClansPaperModule
+import de.titansmp.core.teleport.DefaultTeleportService
+import de.titansmp.core.teleport.JdbcTeleportRepository
+import de.titansmp.paper.teleport.TeleportPaperModule
 import net.luckperms.api.LuckPerms
 import net.luckperms.api.util.Tristate
 import org.bukkit.entity.Player
@@ -62,6 +65,7 @@ class TitanSmpPaperPlugin : JavaPlugin() {
     @Volatile private var statsModule: StatsPaperModule? = null
     @Volatile private var friendsModule: FriendsPaperModule? = null
     @Volatile private var clansModule: ClansPaperModule? = null
+    @Volatile private var teleportModule: TeleportPaperModule? = null
     private var clanDisplayRefresh: ClanDisplayRefreshListener? = null
     @Volatile private var moderationPersistence: java.util.concurrent.ExecutorService? = null
     @Volatile private var economyPersistence: java.util.concurrent.ExecutorService? = null
@@ -211,6 +215,25 @@ class TitanSmpPaperPlugin : JavaPlugin() {
                                 friendDomainService,
                             )
                         } else null
+                        val teleportCommands = if (startedRuntime.teleportConfig.enabled) {
+                            val cfg=startedRuntime.teleportConfig
+                            TeleportPaperModule(
+                                this,
+                                DefaultTeleportService(JdbcTeleportRepository(startedRuntime.databaseDataSource()),startedRuntime.redisService(),moderationExecutor,cfg.requestExpirationSeconds,cfg.defaultCooldownMinutes,cfg.rtpMaxAttempts),
+                                clanService,
+                                startedRuntime.playerService(),
+                                startedRuntime.eventBus(),
+                                startedRuntime.redisService(),
+                                cfg,
+                                serverIdentity.identity.id,
+                                serverIdentity.identity.type.name.lowercase(),
+                                moderationExecutor,
+                                { uuid -> luckPerms.userManager.loadUser(uuid).thenApply { user ->
+                                    val options=luckPerms.contextManager.getQueryOptions(user).orElse(luckPerms.contextManager.staticQueryOptions)
+                                    user.resolveInheritedNodes(options).filter { it.value }.map { it.key }.toSet()
+                                } },
+                            ).also { it.register();teleportModule=it }
+                        } else null
                         val display = DefaultPlayerDisplayService(
                             LuckPermsDisplayProvider(luckPerms),
                             suffixProviders = listOfNotNull(clanService?.let(::ClanDisplaySuffixProvider)),
@@ -258,6 +281,7 @@ class TitanSmpPaperPlugin : JavaPlugin() {
                                 { player, node -> playerAdapter.getPermissionData(player).checkPermission(node) == Tristate.TRUE },
                                 cfg.pageSize,
                                 moderationExecutor,
+                                { player,args -> teleportCommands?.handleClanCommand(player,args) ?: false },
                             ).also { it.register() }
                         }
                         // The Discord bot runtime is a separate process; Paper only shares the linking
@@ -335,6 +359,8 @@ class TitanSmpPaperPlugin : JavaPlugin() {
         friendsModule = null
         clansModule?.close()
         clansModule = null
+        teleportModule?.close()
+        teleportModule = null
         discordModule?.close()
         discordModule = null
         economyModule?.close()

@@ -64,6 +64,19 @@ class TitanSmpConfigLoaderTest {
         assertFailsWith<ConfigurationException> { TitanSmpConfigLoader().load(file, emptyMap()) }
     }
 
+    @Test fun `loads teleport settings and configured RTP types`() {
+        val file=writeConfig()
+        Files.writeString(file,Files.readString(file)+"\nteleport.enabled=true\nteleport.default-cooldown-minutes=45\nteleport.default-home-limit=2\nteleport.tpa.request-expiration-seconds=90\nteleport.rtp.max-attempts=24\nteleport.rtp.server-types=survival,resource\nteleport.clan.default-home-limit=4\n")
+        val teleport=TitanSmpConfigLoader().load(file,emptyMap()).teleport
+        assertTrue(teleport.enabled)
+        assertEquals(45,teleport.defaultCooldownMinutes)
+        assertEquals(2,teleport.defaultHomeLimit)
+        assertEquals(90L,teleport.requestExpirationSeconds)
+        assertEquals(24,teleport.rtpMaxAttempts)
+        assertEquals(setOf("survival","resource"),teleport.rtpServerTypes)
+        assertEquals(4,teleport.defaultClanHomeLimit)
+    }
+
     @Test
     fun `discord integration is disabled by default and needs no credentials`() {
         val configuration = TitanSmpConfigLoader().load(writeConfig(), emptyMap())

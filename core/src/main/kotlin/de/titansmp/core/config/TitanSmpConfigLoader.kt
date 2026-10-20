@@ -138,6 +138,15 @@ class TitanSmpConfigLoader {
                 tagMinLength = integer("clans.tag-min-length", "TITANSMP_CLAN_TAG_MIN_LENGTH", 2),
                 tagMaxLength = integer("clans.tag-max-length", "TITANSMP_CLAN_TAG_MAX_LENGTH", 8),
             ),
+            teleport = TeleportConfig(
+                enabled = value("teleport.enabled", "TITANSMP_TELEPORT_ENABLED", "true").toBooleanStrictOrConfigError("teleport.enabled"),
+                defaultCooldownMinutes = integer("teleport.default-cooldown-minutes", "TITANSMP_TELEPORT_DEFAULT_COOLDOWN_MINUTES", 30),
+                defaultHomeLimit = integer("teleport.default-home-limit", "TITANSMP_TELEPORT_DEFAULT_HOME_LIMIT", 1),
+                requestExpirationSeconds = longValue("teleport.tpa.request-expiration-seconds", "TITANSMP_TELEPORT_TPA_REQUEST_EXPIRATION_SECONDS", 60),
+                rtpMaxAttempts = integer("teleport.rtp.max-attempts", "TITANSMP_TELEPORT_RTP_MAX_ATTEMPTS", 20),
+                rtpServerTypes = (optional("teleport.rtp.server-types", "TITANSMP_TELEPORT_RTP_SERVER_TYPES") ?: "").split(',').map(String::trim).filter(String::isNotEmpty).map(String::lowercase).toSet(),
+                defaultClanHomeLimit = integer("teleport.clan.default-home-limit", "TITANSMP_TELEPORT_CLAN_DEFAULT_HOME_LIMIT", 1),
+            ),
         )
     }
 

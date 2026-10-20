@@ -17,6 +17,7 @@ class TitanSmpConfig(
     val stats: StatsConfig = StatsConfig(),
     val friends: FriendsConfig = FriendsConfig(),
     val clans: ClansConfig = ClansConfig(),
+    val teleport: TeleportConfig = TeleportConfig(),
 ) {
     init {
         require(networkName.isNotBlank()) { "Network name must not be blank" }
@@ -46,6 +47,25 @@ data class ClansConfig(
         require(pageSize in 1..100) { "clans.page-size must be between 1 and 100" }
         require(nameMinLength in 1..nameMaxLength && nameMaxLength <= 24) { "Invalid clan name length range" }
         require(tagMinLength in 1..tagMaxLength && tagMaxLength <= 8) { "Invalid clan tag length range" }
+    }
+}
+
+data class TeleportConfig(
+    val enabled: Boolean = true,
+    val defaultCooldownMinutes: Int = 30,
+    val defaultHomeLimit: Int = 1,
+    val requestExpirationSeconds: Long = 60,
+    val rtpMaxAttempts: Int = 20,
+    val rtpServerTypes: Set<String> = emptySet(),
+    val defaultClanHomeLimit: Int = 1,
+) {
+    init {
+        require(defaultCooldownMinutes >= 0) { "teleport.default-cooldown-minutes must not be negative" }
+        require(defaultHomeLimit >= 0) { "teleport.default-home-limit must not be negative" }
+        require(requestExpirationSeconds in 1..3600) { "teleport.tpa.request-expiration-seconds must be between 1 and 3600" }
+        require(rtpMaxAttempts in 1..100) { "teleport.rtp.max-attempts must be between 1 and 100" }
+        require(defaultClanHomeLimit >= 0) { "teleport.clan.default-home-limit must not be negative" }
+        require(rtpServerTypes.none(String::isBlank))
     }
 }
 

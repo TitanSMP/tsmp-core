@@ -36,6 +36,7 @@ include(
     "modules:discord",
     "modules:friends",
     "modules:clans",
+    "modules:teleport",
     "services:web-api",
     "services:discord-bot",
 )

@@ -25,6 +25,7 @@ modules/
   discord/
   friends/
   clans/
+  teleport/
 services/
   web-api/
   discord-bot/
@@ -123,3 +124,5 @@ The new `modules:friends` feature stores canonical UUID friendships, directed re
 ## Clans
 
 `modules:clans` provides the MariaDB-backed network clan service, transactional role/membership transitions, expiring invitations, and the existing `DisplaySuffixProvider` implementation. Paper owns the command/chat/notification surface; Velocity and Paper resolve clan tags through the existing display service and EventBus. Migration V9 follows the Friends V8 schema. See [clans.md](clans.md).
+
+`modules:teleport` stores homes and pending requests in MariaDB V10, uses atomic cooldown reservations in the shared Redis service, and publishes transfer requests that Velocity routes through the existing Server Transfer/Data Bridge coordinator. Paper owns safe location checks and command integration, including clan homes inside `/clan`. See [teleport.md](teleport.md).

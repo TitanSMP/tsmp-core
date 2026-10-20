@@ -52,8 +52,32 @@ commands:
     aliases: [friend]
   clan:
     description: Manage your network clan
-    usage: /clan [create|invite|accept|reject|promote|demote|kick|leave|invitations|chat|info|color|disband]
+    usage: /clan [create|invite|accept|reject|promote|demote|kick|leave|invitations|chat|info|color|home|sethome|delhome|disband]
     aliases: [c]
+  tpa:
+    description: Request to teleport to a player
+    usage: /tpa <player>
+  tpahere:
+    description: Request a player to teleport to you
+    usage: /tpahere <player>
+  tpaccept:
+    description: Accept the oldest pending teleport request
+    usage: /tpaccept
+  tpdeny:
+    description: Reject the oldest pending teleport request
+    usage: /tpdeny
+  home:
+    description: Teleport to a saved home
+    usage: /home <name>
+  sethome:
+    description: Save your current location as a home
+    usage: /sethome <name>
+  delhome:
+    description: Delete a saved home
+    usage: /delhome <name>
+  rtp:
+    description: Teleport to a safe random location
+    usage: /rtp
 permissions:
   titansmp.enderchest.rows.1:
     description: Grants access to one row of TitanSMP EnderChest storage

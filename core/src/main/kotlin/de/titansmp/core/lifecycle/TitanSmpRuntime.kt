@@ -11,6 +11,7 @@ import de.titansmp.core.config.ServerTransferConfig
 import de.titansmp.core.config.StatsConfig
 import de.titansmp.core.config.FriendsConfig
 import de.titansmp.core.config.ClansConfig
+import de.titansmp.core.config.TeleportConfig
 import de.titansmp.core.config.TitanSmpConfig
 import de.titansmp.core.config.TitanSmpConfigLoader
 import de.titansmp.core.database.DatabaseMigrator
@@ -66,6 +67,8 @@ class TitanSmpRuntime(
         private set
     @Volatile var clansConfig: ClansConfig = ClansConfig()
         private set
+    @Volatile var teleportConfig: TeleportConfig = TeleportConfig()
+        private set
     @Volatile var networkId: String = "titansmp"
         private set
 
@@ -107,6 +110,7 @@ class TitanSmpRuntime(
             statsConfig = configuration.stats
             friendsConfig = configuration.friends
             clansConfig = configuration.clans
+            teleportConfig = configuration.teleport
             networkId = configuration.networkId
             val server = ConfiguredNetworkServer(configuration.serverIdentity, configuration.networkName)
             networkServer = server

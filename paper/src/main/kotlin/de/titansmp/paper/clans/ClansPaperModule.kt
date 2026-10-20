@@ -25,6 +25,7 @@ class ClansPaperModule(
     private val permission: (Player, String) -> Boolean,
     private val pageSize: Int,
     private val executor: Executor,
+    private val clanTeleportCommand: (Player, Array<out String>) -> Boolean = { _, _ -> false },
 ) : CommandExecutor, AutoCloseable {
     private val subscriptions = mutableListOf<EventSubscription>()
 
@@ -37,6 +38,7 @@ class ClansPaperModule(
 
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
         val player = sender as? Player ?: run { sender.sendMessage(Component.text("Only players can use clans.")); return true }
+        if (args.firstOrNull()?.lowercase() in setOf("home", "sethome", "delhome") && clanTeleportCommand(player,args)) return true
         if (label.equals("c", true)) { chat(player,args); return true }
         if (args.isEmpty()) { help(player); return true }
         when(args[0].lowercase()) {
