@@ -8,6 +8,7 @@ See [architecture.md](architecture.md) for the current module layout, module res
 See [friends.md](friends.md) for the network-wide friends model, commands, persistence, events, and notifications.
 See [clans.md](clans.md) for network-wide clans, roles, invitations, colors, chat, display integration, and concurrency.
 See [teleport.md](teleport.md) for network homes, teleport requests, cooldowns, permissions, RTP safety, and transfer integration.
+See [auction-house.md](auction-house.md) for network listings, confirmation purchases, item claims, expiry, permissions, and EconomyService integration.
 
 See [infrastructure.md](infrastructure.md) for configuration, MariaDB, Flyway migrations, Redis, server identity, lifecycle, and operations guidance.
 See [player-identity.md](player-identity.md) for UUID-based player identity, persistence, platform lifecycle, and concurrency constraints.

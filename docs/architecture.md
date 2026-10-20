@@ -33,6 +33,8 @@ services/
 
 Kotlin sources use the `de.titansmp` package root. Each module has a corresponding package directory under `src/main/kotlin/de/titansmp/`.
 
+The Auction House uses the shared MariaDB pool for listing and claim storage (Flyway V11), the shared EconomyService/Money API for TitanCoins, LuckPerms for sell/limit grants, and the existing Redis EventBus for compact auction invalidations. ItemStack serialization remains in the Paper adapter. Purchases use a recoverable `PURCHASING` state and stable economy transaction ID so a restart can resume without charging twice.
+
 ## Responsibilities
 
 ### Foundation

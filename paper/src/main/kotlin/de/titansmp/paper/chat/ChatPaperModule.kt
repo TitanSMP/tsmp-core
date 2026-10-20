@@ -30,6 +30,8 @@ class ChatPaperModule(
         PlayerDisplayFormat.chatMessage(message.source, message.prefix, message.senderName, message.message)
     },
     private val receivedIds: de.titansmp.chat.RecentChatMessageCache = de.titansmp.chat.RecentChatMessageCache(),
+    /** Returns true when a feature consumed this message before network chat publication. */
+    private val consumeChatInput: (java.util.UUID, String) -> Boolean = { _, _ -> false },
 ) : Listener, AutoCloseable {
     private val subscriptions = mutableListOf<EventSubscription>()
 
@@ -49,6 +51,7 @@ class ChatPaperModule(
         event.isCancelled = true
         val player = event.player
         val content = PlainTextComponentSerializer.plainText().serialize(event.message())
+        if (consumeChatInput(player.uniqueId, content)) return
         executor.execute {
             service.send(player.uniqueId, player.name, content, serverId).whenComplete { _, failure ->
                 if (failure != null) {

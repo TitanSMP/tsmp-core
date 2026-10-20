@@ -65,6 +65,10 @@ interface EconomyService {
     fun setBalance(player: UUID, amount: Money, reason: EconomyReason, actor: UUID?, serverId: String): CompletionStage<EconomyChange>
     fun transfer(sender: UUID, receiver: UUID, amount: Money, reason: EconomyReason, actor: UUID?, serverId: String): CompletionStage<EconomyTransfer>
 
+    /** Executes or replays a network-internal transfer under a stable transaction ID. */
+    fun transferOnce(transactionId: UUID, sender: UUID, receiver: UUID, amount: Money, reason: EconomyReason, actor: UUID?, serverId: String): CompletionStage<EconomyTransfer> =
+        transfer(sender, receiver, amount, reason, actor, serverId)
+
     companion object {
         const val DEFAULT_TOP_LIMIT = 10
         const val MAX_TOP_LIMIT = 50

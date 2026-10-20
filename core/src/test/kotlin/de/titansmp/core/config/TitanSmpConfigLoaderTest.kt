@@ -77,6 +77,24 @@ class TitanSmpConfigLoaderTest {
         assertEquals(4,teleport.defaultClanHomeLimit)
     }
 
+    @Test fun `loads auction house settings and validates bounds`() {
+        val file=writeConfig()
+        Files.writeString(file,Files.readString(file)+"\nauction-house.enabled=true\nauction-house.expiration-hours=72\nauction-house.items-per-page=36\nauction-house.search-timeout-seconds=45\nauction-house.default-auction-limit=8\nauction-house.sell-fee-percent=2\nauction-house.aliases=market,trade\n")
+        val config=TitanSmpConfigLoader().load(file,emptyMap()).auctionHouse
+        assertTrue(config.enabled)
+        assertEquals(72L,config.expirationHours)
+        assertEquals(36,config.itemsPerPage)
+        assertEquals(45L,config.searchTimeoutSeconds)
+        assertEquals(8,config.defaultAuctionLimit)
+        assertEquals(2,config.sellFeePercent)
+        assertEquals(listOf("market","trade"),config.aliases)
+    }
+
+    @Test fun `rejects invalid auction configuration`() {
+        val file=writeConfig();Files.writeString(file,Files.readString(file)+"\nauction-house.sell-fee-percent=101\n")
+        assertFailsWith<IllegalArgumentException>{TitanSmpConfigLoader().load(file,emptyMap())}
+    }
+
     @Test
     fun `discord integration is disabled by default and needs no credentials`() {
         val configuration = TitanSmpConfigLoader().load(writeConfig(), emptyMap())

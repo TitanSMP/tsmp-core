@@ -12,4 +12,5 @@ enum class EconomyReason {
     ADMIN_GIVE,
     ADMIN_TAKE,
     ADMIN_SET,
+    AUCTION_HOUSE,
 }

@@ -18,6 +18,7 @@ class TitanSmpConfig(
     val friends: FriendsConfig = FriendsConfig(),
     val clans: ClansConfig = ClansConfig(),
     val teleport: TeleportConfig = TeleportConfig(),
+    val auctionHouse: AuctionHouseConfig = AuctionHouseConfig(),
 ) {
     init {
         require(networkName.isNotBlank()) { "Network name must not be blank" }
@@ -27,6 +28,27 @@ class TitanSmpConfig(
 
     override fun toString(): String =
         "TitanSmpConfig(serverIdentity=$serverIdentity, networkName=$networkName, database=<redacted>, redis=<redacted>, playerTransferTimeoutMs=$playerTransferTimeoutMs, chat=$chat, discord=$discord, serverTransfer=$serverTransfer, stats=$stats)"
+}
+
+data class AuctionHouseConfig(
+    val enabled: Boolean = true,
+    val expirationHours: Long = 48,
+    val itemsPerPage: Int = 45,
+    val searchTimeoutSeconds: Long = 30,
+    val defaultAuctionLimit: Int = 5,
+    val sellFeePercent: Int = 0,
+    val aliases: List<String> = listOf("auctionhouse", "auction"),
+) {
+    init {
+        require(expirationHours in 1..720) { "auction-house.expiration-hours must be between 1 and 720" }
+        require(itemsPerPage in 1..45) { "auction-house.items-per-page must be between 1 and 45" }
+        require(searchTimeoutSeconds in 1..300) { "auction-house.search-timeout-seconds must be between 1 and 300" }
+        require(defaultAuctionLimit >= 0) { "auction-house.default-auction-limit must not be negative" }
+        require(sellFeePercent in 0..100) { "auction-house.sell-fee-percent must be between 0 and 100" }
+        require(aliases.all { it.matches(Regex("[a-z][a-z0-9_-]{0,31}")) } && aliases.distinct().size == aliases.size) {
+            "auction-house.aliases must contain unique lowercase command names"
+        }
+    }
 }
 
 data class FriendsConfig(val enabled: Boolean = true, val pageSize: Int = 10) {

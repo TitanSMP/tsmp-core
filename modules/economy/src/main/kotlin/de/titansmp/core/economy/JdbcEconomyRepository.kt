@@ -87,6 +87,7 @@ class JdbcEconomyRepository(private val dataSource: DataSource) : EconomyReposit
     override fun applyTransfer(request: EconomyTransferRequest): EconomyTransferUpdate {
         require(request.senderUuid != request.receiverUuid) { "A player cannot transfer money to themselves" }
         return transaction { connection ->
+            findTransfer(connection, request)?.let { return@transaction it }
             val ordered = listOf(request.senderUuid, request.receiverUuid).sorted()
             ordered.forEach { ensureBalanceRow(connection, it, request.createdAt) }
             val balances = ordered.associateWith { lockBalance(connection, it) }
@@ -135,6 +136,43 @@ class JdbcEconomyRepository(private val dataSource: DataSource) : EconomyReposit
             )
         }
     }
+
+    /** Replays a transfer committed before its caller lost the response; mismatched IDs are rejected. */
+    private fun findTransfer(connection: Connection, request: EconomyTransferRequest): EconomyTransferUpdate? =
+        connection.prepareStatement(
+            "SELECT player_uuid, counterparty_uuid, type, amount, balance_before, balance_after, source_server_id, actor_uuid, created_at " +
+                "FROM economy_transactions WHERE transaction_id = ? FOR UPDATE",
+        ).use { statement ->
+            statement.setBytes(1, request.transactionId.toBytes())
+            statement.executeQuery().use { rows ->
+                val entries = mutableMapOf<UUID, EconomyLedgerEntry>()
+                while (rows.next()) {
+                    val player = rows.getBytes("player_uuid").toUuid()
+                    val counterparty = rows.getBytes("counterparty_uuid")?.toUuid()
+                    if (counterparty == null || rows.getLong("amount") != request.amount.minorUnits ||
+                        rows.getString("type") != request.reason.name || rows.getString("source_server_id") != request.sourceServerId ||
+                        player !in setOf(request.senderUuid, request.receiverUuid) || counterparty != if (player == request.senderUuid) request.receiverUuid else request.senderUuid
+                    ) throw IllegalStateException("Economy transaction ID ${request.transactionId} is already used for a different operation")
+                    entries[player] = EconomyLedgerEntry(
+                        request.transactionId, player, counterparty, request.reason, request.amount,
+                        Money.ofMinor(rows.getLong("balance_before")), Money.ofMinor(rows.getLong("balance_after")),
+                        rows.getString("source_server_id"), rows.getBytes("actor_uuid")?.toUuid(),
+                        rows.getTimestamp("created_at").toInstant(),
+                    )
+                }
+                if (entries.isEmpty()) return@use null
+                if (entries.size != 2 || request.senderUuid !in entries || request.receiverUuid !in entries) {
+                    throw IllegalStateException("Economy transaction ID ${request.transactionId} has an incomplete transfer ledger")
+                }
+                val sender = entries.getValue(request.senderUuid)
+                val receiver = entries.getValue(request.receiverUuid)
+                EconomyTransferUpdate(
+                    request.transactionId,
+                    EconomyBalanceUpdate(sender.balanceBefore, sender.balanceAfter, sender),
+                    EconomyBalanceUpdate(receiver.balanceBefore, receiver.balanceAfter, receiver),
+                )
+            }
+        }
 
     private fun ensureBalanceRow(connection: Connection, playerUuid: UUID, at: Instant) {
         connection.prepareStatement(

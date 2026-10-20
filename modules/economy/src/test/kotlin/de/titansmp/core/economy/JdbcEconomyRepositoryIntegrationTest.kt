@@ -163,6 +163,20 @@ class JdbcEconomyRepositoryIntegrationTest {
     }
 
     @Test
+    fun `replaying an auction transfer ID does not move money twice`() {
+        val buyer=insertPlayer("AuctionBuyer");val seller=insertPlayer("AuctionSeller")
+        repository.applyChange(request(buyer,EconomyOperation.SET,"20.00",EconomyReason.ADMIN_SET,null))
+        val stableId=UUID.randomUUID()
+        val transfer=EconomyTransferRequest(stableId,buyer,seller,Money.of("7.50"),EconomyReason.AUCTION_HOUSE,null,Instant.now(),"smp-01")
+        val first=repository.applyTransfer(transfer)
+        val replay=repository.applyTransfer(transfer)
+        assertEquals(first.sender.oldBalance,replay.sender.oldBalance)
+        assertEquals(Money.of("12.50"),repository.findBalance(buyer))
+        assertEquals(Money.of("7.50"),repository.findBalance(seller))
+        assertEquals(3,count("economy_transactions"))
+    }
+
+    @Test
     fun `balancetop uses sql ordering with a deterministic uuid tie breaker and limit`() {
         val tiedLow = insertPlayer("TiedLow", UUID(0x1000L, 0x1000L))
         val tiedHigh = insertPlayer("TiedHigh", UUID(0x2000L, 0x2000L))

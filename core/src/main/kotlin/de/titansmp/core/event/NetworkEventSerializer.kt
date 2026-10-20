@@ -48,6 +48,10 @@ import de.titansmp.api.teleport.TeleportDirection
 import de.titansmp.api.teleport.TeleportCooldownCategory
 import de.titansmp.api.teleport.TeleportRequestResolved
 import de.titansmp.api.teleport.TeleportLocationRequested
+import de.titansmp.api.auctionhouse.AuctionChanged
+import de.titansmp.api.auctionhouse.AuctionItemClaimed
+import de.titansmp.api.auctionhouse.AuctionStatus
+import de.titansmp.api.auctionhouse.AuctionItemKind
 import java.time.Instant
 import java.util.UUID
 
@@ -100,6 +104,8 @@ class NetworkEventSerializer(
             TeleportRequestCreated.TYPE -> TeleportRequestCreated(metadata,payload.uuid("requestId"),payload.uuid("requesterUuid"),payload.uuid("targetUuid"),payload.text("requesterName"),TeleportDirection.valueOf(payload.text("direction")),payload.instant("expiresAt"))
             TeleportRequestResolved.TYPE -> TeleportRequestResolved(metadata,payload.uuid("requestId"),payload.uuid("requesterUuid"),payload.uuid("targetUuid"),payload.path("accepted").asBoolean())
             TeleportLocationRequested.TYPE -> TeleportLocationRequested(metadata,payload.uuid("operationId"),payload.uuid("requesterUuid"),payload.uuid("movingPlayerUuid"))
+            AuctionChanged.TYPE -> AuctionChanged(metadata,payload.uuid("auctionId"),payload.uuid("sellerUuid"),payload.nullableUuid("buyerUuid"),AuctionStatus.valueOf(payload.text("status")))
+            AuctionItemClaimed.TYPE -> AuctionItemClaimed(metadata,payload.uuid("itemId"),payload.uuid("ownerUuid"),AuctionItemKind.valueOf(payload.text("kind")))
             PlayerDisconnected.TYPE -> PlayerDisconnected(metadata, payload.uuid("playerId"), payload.text("serverId"))
             PlayerServerChanged.TYPE -> PlayerServerChanged(metadata, payload.uuid("playerId"), payload.text("previousServerId"), payload.text("newServerId"))
             PlayerBanned.TYPE -> PlayerBanned(metadata, payload.uuid("targetId"), payload.text("targetName"), payload.uuid("actionId"), payload.nullableUuid("actorId"), payload.text("actorName"), payload.text("reason"), payload.instant("createdAt"), payload.nullableInstant("expiresAt"), payload.text("serverId"))
@@ -228,6 +234,8 @@ class NetworkEventSerializer(
             is TeleportRequestCreated -> { node.put("requestId",event.requestId.toString());node.put("requesterUuid",event.requesterUuid.toString());node.put("targetUuid",event.targetUuid.toString());node.put("requesterName",event.requesterName);node.put("direction",event.direction.name);node.put("expiresAt",event.expiresAt.toString()) }
             is TeleportRequestResolved -> { node.put("requestId",event.requestId.toString());node.put("requesterUuid",event.requesterUuid.toString());node.put("targetUuid",event.targetUuid.toString());node.put("accepted",event.accepted) }
             is TeleportLocationRequested -> { node.put("operationId",event.operationId.toString());node.put("requesterUuid",event.requesterUuid.toString());node.put("movingPlayerUuid",event.movingPlayerUuid.toString()) }
+            is AuctionChanged -> { node.put("auctionId",event.auctionId.toString());node.put("sellerUuid",event.sellerUuid.toString());if(event.buyerUuid==null)node.putNull("buyerUuid") else node.put("buyerUuid",event.buyerUuid.toString());node.put("status",event.status.name) }
+            is AuctionItemClaimed -> { node.put("itemId",event.itemId.toString());node.put("ownerUuid",event.ownerUuid.toString());node.put("kind",event.kind.name) }
             is PlayerConnected -> {
                 node.put("playerId", event.playerId.toString())
                 node.put("username", event.username)

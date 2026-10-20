@@ -124,6 +124,24 @@ class DefaultEconomyService(
                 }
             }
 
+    override fun transferOnce(
+        transactionId: UUID,
+        sender: UUID,
+        receiver: UUID,
+        amount: Money,
+        reason: EconomyReason,
+        actor: UUID?,
+        serverId: String,
+    ): CompletionStage<EconomyTransfer> =
+        requirePositive(amount)
+            .thenCompose { if (sender == receiver) failed(selfTransfer()) else lookupPair(sender, receiver) }
+            .thenCompose { pair ->
+                when {
+                    pair.first == null || pair.second == null -> failed(EconomyException(EconomyException.Code.PLAYER_NOT_FOUND, "A transfer participant is not known to the TitanSMP network."))
+                    else -> persistTransfer(sender, receiver, amount, reason, actor, serverId, pair.first?.username, pair.second?.username, transactionId)
+                }
+            }
+
     private fun persistChange(
         player: UUID,
         amount: Money,
@@ -163,8 +181,8 @@ class DefaultEconomyService(
         serverId: String,
         senderName: String?,
         receiverName: String?,
+        transactionId: UUID = UUID.randomUUID(),
     ): CompletionStage<EconomyTransfer> {
-        val transactionId = UUID.randomUUID()
         val createdAt = clock.instant()
         return db {
             repository.applyTransfer(

@@ -40,6 +40,9 @@ import de.titansmp.paper.clans.ClansPaperModule
 import de.titansmp.core.teleport.DefaultTeleportService
 import de.titansmp.core.teleport.JdbcTeleportRepository
 import de.titansmp.paper.teleport.TeleportPaperModule
+import de.titansmp.auctionhouse.DefaultAuctionHouseService
+import de.titansmp.auctionhouse.JdbcAuctionRepository
+import de.titansmp.paper.auctionhouse.AuctionHousePaperModule
 import net.luckperms.api.LuckPerms
 import net.luckperms.api.util.Tristate
 import org.bukkit.entity.Player
@@ -66,6 +69,7 @@ class TitanSmpPaperPlugin : JavaPlugin() {
     @Volatile private var friendsModule: FriendsPaperModule? = null
     @Volatile private var clansModule: ClansPaperModule? = null
     @Volatile private var teleportModule: TeleportPaperModule? = null
+    @Volatile private var auctionHouseModule: AuctionHousePaperModule? = null
     private var clanDisplayRefresh: ClanDisplayRefreshListener? = null
     @Volatile private var moderationPersistence: java.util.concurrent.ExecutorService? = null
     @Volatile private var economyPersistence: java.util.concurrent.ExecutorService? = null
@@ -150,20 +154,40 @@ class TitanSmpPaperPlugin : JavaPlugin() {
                             Thread(task, "titansmp-economy-db").apply { isDaemon = true }
                         }
                         economyPersistence = economyExecutor
+                        val economyService = DefaultEconomyService(
+                            JdbcEconomyRepository(startedRuntime.databaseDataSource()),
+                            LuckPermsEconomyPermissionService(luckPerms),
+                            startedRuntime.playerService(),
+                            startedRuntime.eventBus(),
+                            economyExecutor,
+                        )
                         economyModule = EconomyPaperModule(
                             this,
-                            DefaultEconomyService(
-                                JdbcEconomyRepository(startedRuntime.databaseDataSource()),
-                                LuckPermsEconomyPermissionService(luckPerms),
-                                startedRuntime.playerService(),
-                                startedRuntime.eventBus(),
-                                economyExecutor,
-                            ),
+                            economyService,
                             startedRuntime.playerService(),
                             startedRuntime.eventBus(),
                             serverIdentity.identity.id,
                             economyExecutor,
                         ).also { it.register() }
+                        if (startedRuntime.auctionHouseConfig.enabled) {
+                            auctionHouseModule = AuctionHousePaperModule(
+                                this,
+                                DefaultAuctionHouseService(
+                                    JdbcAuctionRepository(startedRuntime.databaseDataSource()),
+                                    economyService,
+                                    startedRuntime.eventBus(),
+                                    economyExecutor,
+                                    serverIdentity.identity.id,
+                                ),
+                                economyService,
+                                startedRuntime.auctionHouseConfig,
+                                serverIdentity.identity.id,
+                                { uuid -> luckPerms.userManager.loadUser(uuid).thenApply { user ->
+                                    val options=luckPerms.contextManager.getQueryOptions(user).orElse(luckPerms.contextManager.staticQueryOptions)
+                                    user.resolveInheritedNodes(options).filter { it.value }.map { it.key }.toSet()
+                                } },
+                            ).also { it.register() }
+                        }
                         if (startedRuntime.serverTransferConfig.enabled) {
                             serverQueueModule = ServerQueuePaperModule(
                                 this,
@@ -258,6 +282,7 @@ class TitanSmpPaperPlugin : JavaPlugin() {
                             startedRuntime.eventBus(),
                             serverIdentity.identity.id,
                             moderationExecutor,
+                            consumeChatInput = { uuid, content -> auctionHouseModule?.consumeChatInput(uuid,content) == true },
                         ).also { it.register() }
                         if (startedRuntime.friendsConfig.enabled && friendDomainService != null) {
                             val repository = JdbcFriendsRepository(startedRuntime.databaseDataSource())
@@ -361,6 +386,8 @@ class TitanSmpPaperPlugin : JavaPlugin() {
         clansModule = null
         teleportModule?.close()
         teleportModule = null
+        auctionHouseModule?.close()
+        auctionHouseModule = null
         discordModule?.close()
         discordModule = null
         economyModule?.close()

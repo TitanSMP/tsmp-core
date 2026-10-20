@@ -6,6 +6,7 @@ import de.titansmp.api.event.EventType
 import de.titansmp.api.friends.*
 import de.titansmp.api.clans.*
 import de.titansmp.api.teleport.*
+import de.titansmp.api.auctionhouse.*
 import de.titansmp.api.databridge.PlayerStateUpdated
 import de.titansmp.api.databridge.PlayerTransferPrepare
 import de.titansmp.api.databridge.PlayerTransferReady
@@ -274,5 +275,14 @@ class NetworkEventSerializerTest {
             stats,
         )
         assertEquals(event, serializer.deserialize(serializer.serialize(EventEnvelope(event))).event)
+    }
+
+    @Test fun `auction invalidation and item claim events round trip`() {
+        val id=UUID.randomUUID();val seller=UUID.randomUUID();val buyer=UUID.randomUUID()
+        val events=listOf(
+            AuctionChanged(metadata.copy(eventType=AuctionChanged.TYPE),id,seller,buyer,AuctionStatus.SOLD),
+            AuctionItemClaimed(metadata.copy(eventType=AuctionItemClaimed.TYPE),UUID.randomUUID(),seller,AuctionItemKind.EXPIRED),
+        )
+        events.forEach { event->assertEquals(event,serializer.deserialize(serializer.serialize(EventEnvelope(event))).event) }
     }
 }

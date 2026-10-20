@@ -66,6 +66,10 @@ commands:
   tpdeny:
     description: Reject the oldest pending teleport request
     usage: /tpdeny
+  ah:
+    description: Browse and manage network-wide player auctions
+    usage: /ah [sell <price>|expired|purchased|cancel <auction-id>|info]
+    aliases: [auctionhouse, auction]
   home:
     description: Teleport to a saved home
     usage: /home <name>

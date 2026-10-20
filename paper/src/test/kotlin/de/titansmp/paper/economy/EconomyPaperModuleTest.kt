@@ -298,7 +298,7 @@ class EconomyPaperModuleTest {
         private fun change(player: UUID, amount: Money, reason: EconomyReason, actor: UUID?, serverId: String): EconomyChange {
             val before = balances[player] ?: Money.ZERO
             val after = when (reason) {
-                EconomyReason.ADMIN_GIVE, EconomyReason.PAYMENT -> before.plus(amount)
+                EconomyReason.ADMIN_GIVE, EconomyReason.PAYMENT, EconomyReason.AUCTION_HOUSE -> before.plus(amount)
                 EconomyReason.ADMIN_TAKE -> before.minus(amount)
                 EconomyReason.ADMIN_SET -> amount
             }

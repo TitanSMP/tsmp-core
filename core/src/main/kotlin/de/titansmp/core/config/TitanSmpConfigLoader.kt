@@ -147,6 +147,16 @@ class TitanSmpConfigLoader {
                 rtpServerTypes = (optional("teleport.rtp.server-types", "TITANSMP_TELEPORT_RTP_SERVER_TYPES") ?: "").split(',').map(String::trim).filter(String::isNotEmpty).map(String::lowercase).toSet(),
                 defaultClanHomeLimit = integer("teleport.clan.default-home-limit", "TITANSMP_TELEPORT_CLAN_DEFAULT_HOME_LIMIT", 1),
             ),
+            auctionHouse = AuctionHouseConfig(
+                enabled = value("auction-house.enabled", "TITANSMP_AUCTION_HOUSE_ENABLED", "true").toBooleanStrictOrConfigError("auction-house.enabled"),
+                expirationHours = longValue("auction-house.expiration-hours", "TITANSMP_AUCTION_HOUSE_EXPIRATION_HOURS", 48),
+                itemsPerPage = integer("auction-house.items-per-page", "TITANSMP_AUCTION_HOUSE_ITEMS_PER_PAGE", 45),
+                searchTimeoutSeconds = longValue("auction-house.search-timeout-seconds", "TITANSMP_AUCTION_HOUSE_SEARCH_TIMEOUT_SECONDS", 30),
+                defaultAuctionLimit = integer("auction-house.default-auction-limit", "TITANSMP_AUCTION_HOUSE_DEFAULT_AUCTION_LIMIT", 5),
+                sellFeePercent = integer("auction-house.sell-fee-percent", "TITANSMP_AUCTION_HOUSE_SELL_FEE_PERCENT", 0),
+                aliases = value("auction-house.aliases", "TITANSMP_AUCTION_HOUSE_ALIASES", "auctionhouse,auction")
+                    .split(',').map(String::trim).filter(String::isNotEmpty),
+            ),
         )
     }
 

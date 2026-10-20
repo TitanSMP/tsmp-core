@@ -1,0 +1,43 @@
+CREATE TABLE auction_house_listings (
+    id BINARY(16) NOT NULL,
+    seller_uuid BINARY(16) NOT NULL,
+    item_data LONGBLOB NOT NULL,
+    search_text VARCHAR(8192) NOT NULL,
+    price_minor BIGINT NOT NULL,
+    currency VARCHAR(32) NOT NULL DEFAULT 'TitanCoins',
+    status VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    buyer_uuid BINARY(16) NULL,
+    purchase_transaction_id BINARY(16) NULL,
+    created_at DATETIME(3) NOT NULL,
+    expires_at DATETIME(3) NOT NULL,
+    purchased_at DATETIME(3) NULL,
+    cancelled_at DATETIME(3) NULL,
+    expired_at DATETIME(3) NULL,
+    item_claimed_at DATETIME(3) NULL,
+    item_claim_token BINARY(16) NULL,
+    PRIMARY KEY (id),
+    KEY idx_auction_active_created (status, created_at DESC, id),
+    KEY idx_auction_active_price (status, price_minor, created_at DESC),
+    KEY idx_auction_seller (seller_uuid, status, created_at DESC),
+    KEY idx_auction_buyer (buyer_uuid, purchased_at DESC),
+    KEY idx_auction_expiration (status, expires_at),
+    KEY idx_auction_created (created_at),
+    KEY idx_auction_price (price_minor),
+    CONSTRAINT chk_auction_price_positive CHECK (price_minor > 0)
+);
+
+CREATE TABLE auction_house_items (
+    id BINARY(16) NOT NULL,
+    auction_id BINARY(16) NOT NULL,
+    owner_uuid BINARY(16) NOT NULL,
+    item_data LONGBLOB NOT NULL,
+    search_text VARCHAR(8192) NOT NULL,
+    kind VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    created_at DATETIME(3) NOT NULL,
+    claimed_at DATETIME(3) NULL,
+    claim_token BINARY(16) NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_auction_item_kind (auction_id, kind),
+    KEY idx_auction_items_owner (owner_uuid, kind, claimed_at, created_at),
+    CONSTRAINT fk_auction_item_listing FOREIGN KEY (auction_id) REFERENCES auction_house_listings (id)
+);
